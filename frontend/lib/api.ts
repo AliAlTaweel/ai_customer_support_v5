@@ -42,6 +42,7 @@ export interface ConversationSummary {
   conversation_id: string;
   customer_email: string | null;
   customer_name: string | null;
+  customer_identifier?: string | null;
   status: string;
   message_count: number;
   unread_count: number;
@@ -50,8 +51,11 @@ export interface ConversationSummary {
   created_at: string;
 }
 
-export async function listConversations(): Promise<ConversationSummary[]> {
-  const res = await fetch(`${BACKEND_URL}/api/chat/conversations`, {
+export async function listConversations(
+  channel?: string
+): Promise<ConversationSummary[]> {
+  const query = channel ? `?channel=${encodeURIComponent(channel)}` : "";
+  const res = await fetch(`${BACKEND_URL}/api/chat/conversations${query}`, {
     headers: {
       Authorization: `Bearer ${API_KEY}`,
     },
