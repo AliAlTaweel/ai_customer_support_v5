@@ -27,6 +27,10 @@ def _gmail_client_factory():
     return GmailClient.from_settings()
 
 
+class EmailDeliveryError(Exception):
+    """Raised when an email reply was attempted and the send failed."""
+
+
 class ChatService:
     """Business logic for customer chat API"""
 
@@ -300,9 +304,17 @@ class ChatService:
             )
             logger.info(f"📧 Email reply sent to {to_address} | Conv: {conversation_id}")
         except Exception as e:
-            # The reply is already persisted and visible in the UI; a delivery
-            # failure must not break the pipeline.
-            logger.error(f"✗ Failed to send email reply | Conv: {conversation_id} | {e}")
+            # Transient Gmail/network errors are expected and varied; log the
+            # full traceback for diagnosis, but do not swallow the failure --
+            # the caller (and eventually the email ingestion pipeline) must
+            # learn the send did not happen so it isn't recorded as replied.
+            logger.error(
+                f"✗ Failed to send email reply | Conv: {conversation_id} | To: {to_address} | {e}",
+                exc_info=True,
+            )
+            raise EmailDeliveryError(
+                f"Failed to send email reply | Conv: {conversation_id} | To: {to_address}"
+            ) from e
 
     @staticmethod
     async def list_conversations(
