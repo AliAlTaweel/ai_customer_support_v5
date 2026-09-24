@@ -3,6 +3,7 @@
 Auto-send with no human in the loop over attacker-controlled input makes
 these load-bearing. Every function here is pure.
 """
+import re
 from typing import Optional
 
 from services.email_parser import ParsedEmail
@@ -11,6 +12,13 @@ _NOREPLY_LOCAL_PARTS = frozenset(
     {"noreply", "no-reply", "donotreply", "do-not-reply", "mailer-daemon", "postmaster"}
 )
 _BULK_PRECEDENCE = frozenset({"bulk", "junk", "list"})
+
+# Matches only a hard "fail" verdict. "softfail", "permerror", "temperror",
+# "none" and "neutral" are all deliberately NOT failures: a missing or
+# inconclusive verdict is not evidence of forgery, and treating it as one
+# would silently drop mail from correctly-configured senders whose provider
+# simply did not stamp a result.
+_AUTH_FAIL_RE = re.compile(r"(?:^|[\s;(])(?:dkim|spf)\s*=\s*fail\b", re.IGNORECASE)
 
 
 class SkipReason:
@@ -21,9 +29,41 @@ class SkipReason:
     NOREPLY_SENDER = "noreply_sender"
     SELF_SEND = "self_send"
     EMPTY_BODY = "empty_body"
+    AUTH_FAILED = "auth_failed"
     NOT_ALLOWLISTED = "not_allowlisted"
     RATE_LIMITED_SENDER = "rate_limited_sender"
     RATE_LIMITED_GLOBAL = "rate_limited_global"
+
+
+# Permanent reasons describe the message itself and will never become false:
+# a bounce is always a bounce, a forged sender is always forged. These are
+# claimed and marked read so they are never looked at again.
+PERMANENT_SKIP_REASONS = frozenset({
+    SkipReason.AUTO_SUBMITTED,
+    SkipReason.BULK_PRECEDENCE,
+    SkipReason.MAILING_LIST,
+    SkipReason.BOUNCE,
+    SkipReason.NOREPLY_SENDER,
+    SkipReason.SELF_SEND,
+    SkipReason.EMPTY_BODY,
+    SkipReason.AUTH_FAILED,
+})
+
+# Deferrable reasons describe the *system's current state*, not the message.
+# A rate limit expires; an allowlist gets widened during rollout. Claiming
+# and marking these read destroys legitimate customer mail permanently,
+# because the claim's unique index means it can never be reclaimed. They are
+# therefore left untouched in the mailbox to be reconsidered next cycle.
+DEFERRABLE_SKIP_REASONS = frozenset({
+    SkipReason.NOT_ALLOWLISTED,
+    SkipReason.RATE_LIMITED_SENDER,
+    SkipReason.RATE_LIMITED_GLOBAL,
+})
+
+
+def is_deferrable(skip_reason: str) -> bool:
+    """True if the reason may stop applying later, so the message must be kept."""
+    return skip_reason in DEFERRABLE_SKIP_REASONS
 
 
 def check_loop_gates(email: ParsedEmail, mailbox_address: str) -> Optional[str]:
@@ -61,6 +101,24 @@ def check_loop_gates(email: ParsedEmail, mailbox_address: str) -> Optional[str]:
     if not email.body.strip():
         return SkipReason.EMPTY_BODY
 
+    return None
+
+
+def check_sender_authentication(email: ParsedEmail) -> Optional[str]:
+    """Return SkipReason.AUTH_FAILED if Gmail says the sender is forged.
+
+    Gmail stamps `Authentication-Results` on everything it accepts. Without
+    this check, an open allowlist ("*") lets anyone forge a From: header and
+    make us send unsolicited mail to the address they named.
+
+    Absent or unparseable header means "no verdict", which is NOT a failure
+    signal -- plenty of legitimate mail carries no result.
+    """
+    header = email.headers.get("authentication-results")
+    if not header:
+        return None
+    if _AUTH_FAIL_RE.search(header):
+        return SkipReason.AUTH_FAILED
     return None
 
 
