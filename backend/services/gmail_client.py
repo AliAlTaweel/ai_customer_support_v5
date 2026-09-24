@@ -155,3 +155,31 @@ class GmailClient:
             )
 
         await asyncio.to_thread(_call)
+
+
+_client: Optional[GmailClient] = None
+_client_lock = asyncio.Lock()
+
+
+async def get_client() -> GmailClient:
+    """The process-wide Gmail client, built once, off the event loop.
+
+    `from_settings` calls googleapiclient's `build()`, which does blocking
+    discovery I/O; calling it inline from async code stalls the loop, and
+    calling it per reply also means every send carries its own credentials
+    object with its own token refresh. One lazily-built instance, constructed
+    in a worker thread, fixes both. The client itself is stateless beyond the
+    service handle, so sharing it across the API and the poll worker is safe.
+    """
+    global _client
+    if _client is None:
+        async with _client_lock:
+            if _client is None:
+                _client = await asyncio.to_thread(GmailClient.from_settings)
+    return _client
+
+
+def reset_client() -> None:
+    """Drop the cached client. For tests and credential rotation."""
+    global _client
+    _client = None

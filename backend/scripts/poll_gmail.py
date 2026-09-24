@@ -17,7 +17,7 @@ from config import get_settings
 from database import Database
 from repositories.processed_email_store import ProcessedEmailStore
 from services.email_ingest_service import EmailIngestService
-from services.gmail_client import GmailClient
+from services.gmail_client import get_client
 from utils.logger import logger
 
 
@@ -99,7 +99,8 @@ async def _run(args) -> int:
     await Database.init_chat_collections()
 
     try:
-        gmail = GmailClient.from_settings()
+        # The same process-wide client the send path uses, built off the loop.
+        gmail = await get_client()
         store = ProcessedEmailStore()
         interval = _resolve_interval(args, settings)
         return await _poll_forever(gmail=gmail, store=store, args=args, interval=interval)
