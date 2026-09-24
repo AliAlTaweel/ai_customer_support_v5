@@ -36,6 +36,11 @@ export interface Message {
   content: string;
   read: boolean;
   created_at: string;
+  /**
+   * Only ever "failed", and only on an outbound reply whose send raised.
+   * Absent/null means no outbound send was attempted or it succeeded.
+   */
+  delivery_status?: string | null;
 }
 
 export interface ConversationSummary {
@@ -100,7 +105,16 @@ export async function replyToConversation(
   });
 
   if (!res.ok) {
-    throw new Error(`Request failed: ${res.status}`);
+    // The backend returns 502 with a human-readable detail when the reply was
+    // saved but the email could not be sent. Surface that rather than a bare
+    // status code, so the agent knows the customer did not receive it.
+    let detail = "";
+    try {
+      detail = (await res.json())?.detail ?? "";
+    } catch {
+      // Non-JSON error body; fall back to the status code alone.
+    }
+    throw new Error(detail || `Request failed: ${res.status}`);
   }
 }
 

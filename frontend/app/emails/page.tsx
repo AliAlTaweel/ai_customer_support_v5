@@ -28,6 +28,7 @@ export default function EmailsPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [reply, setReply] = useState("");
   const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
 
   useEffect(() => {
     async function loadConversations() {
@@ -67,17 +68,29 @@ export default function EmailsPage() {
     if (!text || !selectedId || sending) return;
 
     setSending(true);
+    setSendError(null);
     try {
       await replyToConversation(selectedId, text, AGENT_NAME);
       setReply("");
-      const { messages: serverMessages } = await getConversation(selectedId);
-      setMessages(serverMessages);
-      const data = await listConversations("email");
-      setConversations(data);
-    } catch {
-      // Leave the text in the box so the agent can retry.
+    } catch (err) {
+      // This reply is emailed to the customer, so a failure here means they
+      // received nothing. Say so, and leave the text in the box to retry --
+      // clearing it silently would look exactly like a successful send.
+      setSendError(
+        err instanceof Error ? err.message : "The reply could not be sent."
+      );
     } finally {
       setSending(false);
+    }
+
+    // Refresh either way: on failure the message is still persisted, stamped
+    // as undelivered, and the agent needs to see it in that state.
+    try {
+      const { messages: serverMessages } = await getConversation(selectedId);
+      setMessages(serverMessages);
+      setConversations(await listConversations("email"));
+    } catch {
+      // The pollers will catch up.
     }
   }
 
@@ -95,7 +108,10 @@ export default function EmailsPage() {
           {conversations.map((conv) => (
             <button
               key={conv.conversation_id}
-              onClick={() => setSelectedId(conv.conversation_id)}
+              onClick={() => {
+                setSelectedId(conv.conversation_id);
+                setSendError(null);
+              }}
               className={`block w-full border-b border-gray-100 p-4 text-left hover:bg-gray-50 ${
                 selectedId === conv.conversation_id ? "bg-blue-50" : ""
               }`}
@@ -127,22 +143,41 @@ export default function EmailsPage() {
           {selectedId && (
             <>
               <div className="flex-1 space-y-3 overflow-y-auto p-6">
-                {messages.map((msg) => (
-                  <div
-                    key={msg.message_id}
-                    className={`max-w-2xl rounded-lg p-3 text-sm ${
-                      msg.sender === "customer"
-                        ? "bg-gray-100 text-gray-900"
-                        : "ml-auto bg-blue-600 text-white"
-                    }`}
-                  >
-                    <p className="mb-1 text-xs opacity-70">{msg.sender_name}</p>
-                    <p className="whitespace-pre-wrap">{msg.content}</p>
-                  </div>
-                ))}
+                {messages.map((msg) => {
+                  const undelivered = msg.delivery_status === "failed";
+                  return (
+                    <div
+                      key={msg.message_id}
+                      className={`max-w-2xl rounded-lg p-3 text-sm ${
+                        msg.sender === "customer"
+                          ? "bg-gray-100 text-gray-900"
+                          : undelivered
+                            ? "ml-auto border border-red-300 bg-red-50 text-gray-900"
+                            : "ml-auto bg-blue-600 text-white"
+                      }`}
+                    >
+                      <p className="mb-1 text-xs opacity-70">{msg.sender_name}</p>
+                      <p className="whitespace-pre-wrap">{msg.content}</p>
+                      {undelivered && (
+                        <p className="mt-2 text-xs font-medium text-red-700">
+                          ⚠ Not delivered — this email was never sent to the
+                          customer.
+                        </p>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
 
               <div className="border-t border-gray-200 bg-white p-4">
+                {sendError && (
+                  <p
+                    role="alert"
+                    className="mb-2 rounded border border-red-300 bg-red-50 p-2 text-sm text-red-800"
+                  >
+                    {sendError}
+                  </p>
+                )}
                 <div className="flex gap-2">
                   <textarea
                     value={reply}
