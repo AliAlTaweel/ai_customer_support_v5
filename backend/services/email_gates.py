@@ -50,7 +50,9 @@ def check_loop_gates(email: ParsedEmail, mailbox_address: str) -> Optional[str]:
 
     address = email.from_address.lower()
     local_part = address.split("@", 1)[0]
-    if local_part in _NOREPLY_LOCAL_PARTS:
+    # Strip plus-addressing to catch noreply+tags
+    base_local = local_part.split("+", 1)[0]
+    if base_local in _NOREPLY_LOCAL_PARTS:
         return SkipReason.NOREPLY_SENDER
 
     if mailbox_address and address == mailbox_address.lower():

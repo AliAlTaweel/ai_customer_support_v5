@@ -55,10 +55,16 @@ def test_rejects_bounce_with_empty_return_path():
         "no-reply@shop.com",
         "MAILER-DAEMON@shop.com",
         "postmaster@shop.com",
+        "noreply+bounce@shop.com",
+        "no-reply+tag@shop.com",
     ],
 )
 def test_rejects_noreply_senders(address):
     assert check_loop_gates(_email(from_address=address), MAILBOX) == SkipReason.NOREPLY_SENDER
+
+
+def test_plus_addressed_customer_passes_all_gates():
+    assert check_loop_gates(_email(from_address="customer+orders@example.com"), MAILBOX) is None
 
 
 def test_rejects_self_send():
