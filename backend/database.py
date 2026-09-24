@@ -38,24 +38,38 @@ class Database:
 
         try:
             conversations = db["conversations"]
-            conversations.create_index([("tenant_id", 1), ("created_at", -1)])
-            conversations.create_index([("tenant_id", 1), ("customer_email", 1)])
-            conversations.create_index([("tenant_id", 1), ("status", 1)])
+            await conversations.create_index([("tenant_id", 1), ("created_at", -1)])
+            await conversations.create_index([("tenant_id", 1), ("customer_email", 1)])
+            await conversations.create_index([("tenant_id", 1), ("status", 1)])
+            await conversations.create_index([("tenant_id", 1), ("channel", 1)])
         except Exception:
             pass  # Collection or index may already exist
 
         try:
             messages = db["messages"]
-            messages.create_index([("conversation_id", 1), ("created_at", -1)])
-            messages.create_index([("tenant_id", 1), ("created_at", -1)])
-            messages.create_index([("conversation_id", 1), ("read", 1)])
+            await messages.create_index([("conversation_id", 1), ("created_at", -1)])
+            await messages.create_index([("tenant_id", 1), ("created_at", -1)])
+            await messages.create_index([("conversation_id", 1), ("read", 1)])
         except Exception:
             pass
 
         try:
             api_keys = db["tenant_api_keys"]
-            api_keys.create_index([("tenant_id", 1)])
-            api_keys.create_index([("api_key_prefix", 1)])
+            await api_keys.create_index([("tenant_id", 1)])
+            await api_keys.create_index([("api_key_prefix", 1)])
+        except Exception:
+            pass
+
+        try:
+            processed_emails = db["processed_emails"]
+            # Unique index IS the idempotency guarantee -- a duplicate insert
+            # raises DuplicateKeyError rather than producing a second reply.
+            await processed_emails.create_index(
+                [("gmail_message_id", 1)], unique=True
+            )
+            await processed_emails.create_index(
+                [("tenant_id", 1), ("from_address", 1), ("processed_at", -1)]
+            )
         except Exception:
             pass
 
