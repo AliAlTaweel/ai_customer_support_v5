@@ -1,6 +1,8 @@
 """Gmail poll worker for the email channel.
 
-Runs as its own process so a crash here cannot take down the API.
+Runs as its own process so a crash here cannot take down the API. A failed
+poll cycle is logged and the worker moves on to the next interval rather
+than dying -- only Ctrl-C (or a supervisor cancelling the process) stops it.
 
 Usage:
     python -m scripts.poll_gmail --once           # one cycle, then exit
@@ -35,6 +37,49 @@ async def run_once(gmail, store) -> dict:
     return await EmailIngestService.process_unread(gmail=gmail, store=store)
 
 
+def _resolve_interval(args, settings) -> int:
+    """Honour an explicit --interval (including 0) over the settings default."""
+    return args.interval if args.interval is not None else settings.GMAIL_POLL_INTERVAL_SECONDS
+
+
+def _log_result(result: dict) -> None:
+    """Log a poll cycle's outcome, iterating whatever status keys came back.
+
+    Never hardcodes the status set -- delivery_failed and any future status
+    must surface here automatically.
+    """
+    if not result:
+        logger.info("📭 Poll cycle: no unread messages")
+        return
+    summary = ", ".join(f"{status}={count}" for status, count in result.items())
+    logger.info(f"📊 Poll cycle: {summary}")
+
+
+async def _poll_forever(*, gmail, store, args, interval: int) -> int:
+    """Run cycles until --once is satisfied or the caller is cancelled.
+
+    A cycle that raises is logged and the loop continues to the next
+    interval -- one bad Gmail API call or Mongo hiccup must not kill the
+    worker. In --once mode the exception is left to propagate so a
+    supervisor sees a non-zero exit instead of a silently swallowed failure.
+    """
+    while True:
+        if args.once:
+            result = await run_once(gmail, store)
+            _log_result(result)
+            return 0
+
+        try:
+            result = await run_once(gmail, store)
+            _log_result(result)
+        except (KeyboardInterrupt, asyncio.CancelledError):
+            raise
+        except Exception:
+            logger.error("✗ Poll cycle failed", exc_info=True)
+
+        await asyncio.sleep(interval)
+
+
 async def _run(args) -> int:
     settings = get_settings()
 
@@ -56,13 +101,8 @@ async def _run(args) -> int:
     try:
         gmail = GmailClient.from_settings()
         store = ProcessedEmailStore()
-        interval = args.interval or settings.GMAIL_POLL_INTERVAL_SECONDS
-
-        while True:
-            await run_once(gmail, store)
-            if args.once:
-                return 0
-            await asyncio.sleep(interval)
+        interval = _resolve_interval(args, settings)
+        return await _poll_forever(gmail=gmail, store=store, args=args, interval=interval)
     finally:
         await Database.disconnect()
 
@@ -74,6 +114,9 @@ def main(argv: Optional[list] = None) -> int:
     except KeyboardInterrupt:
         logger.info("🛑 Poller stopped")
         return 0
+    except Exception:
+        logger.error("✗ Poll worker failed", exc_info=True)
+        return 1
 
 
 if __name__ == "__main__":

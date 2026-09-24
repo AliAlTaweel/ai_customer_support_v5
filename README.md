@@ -52,9 +52,11 @@ Defaults are the safe end: an unconfigured install sends nothing. The poller
 runs as its own process — the API (`python main.py`) does not need it and is
 unaffected if it stops.
 
-**On failed sends:** each poll cycle's result includes a count per outcome,
-including `delivery_failed` — the AI produced an answer but the Gmail send
-itself failed (e.g. transient API error). That email is recorded in the
+**On failed sends:** the poller logs a count per outcome after every cycle
+(e.g. `replied=2, delivery_failed=1`), including `delivery_failed` — the AI
+produced an answer but the Gmail send itself failed (e.g. transient API
+error). A single failed cycle is logged and the poller moves on to the next
+interval rather than crashing. That email is recorded in the
 `processed_emails` collection as `skipped` with `skip_reason: "delivery_failed"`.
 Because `claim()` inserts into a unique index once per message, a
 `delivery_failed` email is **not retried automatically** on the next poll —
