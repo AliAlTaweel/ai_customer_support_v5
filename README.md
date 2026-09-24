@@ -20,7 +20,7 @@ channels were left behind — this is not a full platform, just the engine.
 
 ## Running it
 
-1. `cd backend && python -m venv venv && source venv/bin/activate && pip install -r requirements.txt`
+1. `cd backend && python3 -m venv venv && source venv/bin/activate && pip install -r requirements.txt`
 2. Copy `.env.example` to `.env` and fill in `MONGODB_URL` (Atlas, for vector search) and `GEMINI_API_KEY`
 3. `python -m scripts.seed_tenant --name "Acme Inc" --email admin@acme.com` — creates a tenant and prints an API key
 4. `python main.py` (or `uvicorn main:app --reload`)
