@@ -50,7 +50,29 @@ Bring it up in three steps, each a config change rather than a code change:
 
 Defaults are the safe end: an unconfigured install sends nothing. The poller
 runs as its own process — the API (`python main.py`) does not need it and is
-unaffected if it stops.
+unaffected if it stops. `GMAIL_ENABLED=false` is a full kill switch: it stops
+the poller starting *and* stops outbound mail on the API's own send path
+(agent replies from the Emails tab, AI replies to existing email threads).
+
+**Deferred mail during steps 1–2 (and under rate limits):** a message whose
+sender is not on `GMAIL_ALLOWED_SENDERS`, or that arrives once the hourly
+send caps are reached, is counted as `deferred` in the cycle summary. It is
+deliberately left **unread and unclaimed** — nothing is written to
+`processed_emails` and nothing is marked read in Gmail — so it will be
+reconsidered on every subsequent cycle and answered once the allowlist is
+widened or the rate-limit window rolls over. The consequence is that such
+messages keep reappearing in the unread window until they are answerable or
+you deal with them by hand in Gmail. That is intended: claiming them would
+be irreversible (see below) and would destroy legitimate customer mail
+permanently, which is strictly worse than the noise.
+
+This is only for *transient* reasons. Messages rejected for what they are —
+autoresponders, bulk/mailing-list mail, bounces, `noreply` senders, mail from
+the mailbox to itself, empty bodies, and senders whose
+`Authentication-Results` show a hard `dkim=fail`/`spf=fail` — are counted as
+`skipped`, recorded, and marked read, because no later cycle would decide
+differently. (A missing or inconclusive authentication result is not treated
+as a failure.)
 
 **On failed sends:** the poller logs a count per outcome after every cycle
 (e.g. `replied=2, delivery_failed=1`), including `delivery_failed` — the AI
@@ -61,4 +83,13 @@ interval rather than crashing. That email is recorded in the
 Because `claim()` inserts into a unique index once per message, a
 `delivery_failed` email is **not retried automatically** on the next poll —
 recovering it means deleting that record from `processed_emails` so the
-message is claimed again.
+message is claimed again (and marking it unread in Gmail). It *is* marked
+read: the claim cannot be released, so leaving it unread would only cost a
+Gmail fetch every cycle forever while crowding out new mail in the capped
+unread window.
+
+If the AI answered and the send failed, the reply is still stored in the
+conversation but stamped `delivery_status: "failed"`, and the Emails tab
+renders it as visibly undelivered rather than as a normal sent message. The
+same applies to a human agent's reply, whose send failure is returned to the
+Emails tab as an error (HTTP 502) instead of a silent success.
