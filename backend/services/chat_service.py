@@ -21,6 +21,12 @@ chat_logger = setup_chat_logger()
 ai_logger = setup_ai_logger()
 
 
+def _gmail_client_factory():
+    """Indirection so tests can inject a fake Gmail client."""
+    from services.gmail_client import GmailClient
+    return GmailClient.from_settings()
+
+
 class ChatService:
     """Business logic for customer chat API"""
 
@@ -38,6 +44,7 @@ class ChatService:
         customer_name: Optional[str] = None,
         webhook_url: Optional[str] = None,
         email_thread_id: Optional[str] = None,
+        email_headers: Optional[Dict[str, str]] = None,
         whatsapp_message_id: Optional[str] = None,
     ) -> SendMessageResponse:
         """Ingest a customer message from any channel (widget, email, whatsapp),
@@ -89,6 +96,9 @@ class ChatService:
                 conversation_doc["webhook_url"] = webhook_url
             if email_thread_id:
                 conversation_doc["email_thread_id"] = email_thread_id
+            if email_headers:
+                conversation_doc["last_email_message_id"] = email_headers.get("message_id")
+                conversation_doc["last_email_subject"] = email_headers.get("subject")
             if whatsapp_message_id:
                 conversation_doc["whatsapp_message_id"] = whatsapp_message_id
 
@@ -100,6 +110,9 @@ class ChatService:
                 updates["webhook_url"] = webhook_url
             if email_thread_id:
                 updates["email_thread_id"] = email_thread_id
+            if email_headers:
+                updates["last_email_message_id"] = email_headers.get("message_id")
+                updates["last_email_subject"] = email_headers.get("subject")
             if whatsapp_message_id:
                 updates["whatsapp_message_id"] = whatsapp_message_id
             if updates:
@@ -244,11 +257,52 @@ class ChatService:
 
     @staticmethod
     async def _deliver_reply(conv_doc: Dict[str, Any], reply_text: str) -> None:
-        """AI/agent replies on the widget and ecommerce channels are retrieved by
-        the frontend via polling or the synchronous response, so no outbound send
-        is needed here."""
+        """Dispatch an AI/agent reply to the conversation's channel.
+
+        Widget and ecommerce replies are retrieved by the frontend via polling
+        or the synchronous response, so they need no outbound send. Email
+        replies must actually be mailed.
+        """
         channel = conv_doc.get("channel", "widget")
-        logger.info(f"⏭️  No outbound delivery needed for {channel} channel (frontend/polling will retrieve) | Conv: {conv_doc.get('conversation_id')}")
+        conversation_id = conv_doc.get("conversation_id")
+
+        if channel != "email":
+            logger.info(
+                f"⏭️  No outbound delivery needed for {channel} channel "
+                f"(frontend/polling will retrieve) | Conv: {conversation_id}"
+            )
+            return
+
+        from config import get_settings
+        settings = get_settings()
+
+        to_address = conv_doc.get("customer_identifier") or conv_doc.get("customer_email")
+        if not to_address:
+            logger.error(f"✗ Email reply has no recipient | Conv: {conversation_id}")
+            return
+
+        if settings.GMAIL_DRY_RUN:
+            logger.info(
+                f"🧪 DRY RUN — would email {to_address} | Conv: {conversation_id}\n"
+                f"{reply_text}"
+            )
+            return
+
+        try:
+            client = _gmail_client_factory()
+            await client.send_reply(
+                to=to_address,
+                subject=conv_doc.get("last_email_subject", "") or "Your support request",
+                body=reply_text,
+                thread_id=conv_doc.get("email_thread_id", ""),
+                in_reply_to=conv_doc.get("last_email_message_id"),
+                references=conv_doc.get("last_email_message_id"),
+            )
+            logger.info(f"📧 Email reply sent to {to_address} | Conv: {conversation_id}")
+        except Exception as e:
+            # The reply is already persisted and visible in the UI; a delivery
+            # failure must not break the pipeline.
+            logger.error(f"✗ Failed to send email reply | Conv: {conversation_id} | {e}")
 
     @staticmethod
     async def list_conversations(
