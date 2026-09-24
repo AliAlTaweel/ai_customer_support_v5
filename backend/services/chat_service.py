@@ -1,6 +1,7 @@
 """Chat service for business logic operations."""
 
 from datetime import datetime, timezone
+import inspect
 import uuid
 from typing import Optional, List, Dict, Any
 from models.chat import (
@@ -21,10 +22,16 @@ chat_logger = setup_chat_logger()
 ai_logger = setup_ai_logger()
 
 
-def _gmail_client_factory():
-    """Indirection so tests can inject a fake Gmail client."""
-    from services.gmail_client import GmailClient
-    return GmailClient.from_settings()
+async def _gmail_client_factory():
+    """Indirection so tests can inject a fake Gmail client.
+
+    Returns the process-wide client rather than building one per reply --
+    googleapiclient's build() is blocking and must not run on the loop.
+    Monkeypatched replacements may be sync or async; the call site handles
+    both.
+    """
+    from services.gmail_client import get_client
+    return await get_client()
 
 
 class EmailDeliveryError(Exception):
@@ -210,8 +217,16 @@ class ChatService:
             ai_logger.info(f"⏭️  AI SKIPPED | Tenant: {tenant_id} | Reason: no KB content or connections")
             return None
 
+        # Prompt boundary. The email body is stored raw (so the thread and its
+        # preview show the customer's actual words), and the untrusted-content
+        # delimiters are added here, on the way to the model and nowhere else.
+        prompt_message = customer_message
+        if conv_doc.get("channel") == "email":
+            from services.email_gates import wrap_untrusted_body
+            prompt_message = wrap_untrusted_body(customer_message)
+
         result = await AIReplyService.generate_reply(
-            tenant_id, customer_message, customer_identifier=conv_doc.get("customer_identifier")
+            tenant_id, prompt_message, customer_identifier=conv_doc.get("customer_identifier")
         )
         now = datetime.now(timezone.utc)
 
@@ -243,7 +258,15 @@ class ChatService:
                 }
             )
             ai_logger.info(f"✅ AI ANSWERED | Conv: {conversation_id} | Tokens: {result.token_count} | Duration: {result.duration_ms}ms")
-            await ChatService._deliver_reply(conv_doc, result.answer)
+            try:
+                await ChatService._deliver_reply(conv_doc, result.answer)
+            except EmailDeliveryError:
+                # The message row is already written, so without this marker
+                # the Emails tab shows an ordinary sent bubble for a reply the
+                # customer never received. Re-raise so the ingestion pipeline
+                # still records delivery_failed.
+                await ChatService._mark_delivery_failed(ai_message_id)
+                raise
             return result.answer
         else:
             await db["conversations"].update_one(
@@ -258,6 +281,21 @@ class ChatService:
             )
             ai_logger.info(f"🔄 AI ESCALATED | Conv: {conversation_id} | Reason: {result.escalate_reason}")
             return None
+
+    @staticmethod
+    async def _mark_delivery_failed(message_id: str) -> None:
+        """Stamp a persisted message as not delivered.
+
+        A message row with no delivery_status is, and must stay, an ordinary
+        delivered message -- only failures are marked, so existing rows and
+        every non-email channel are unaffected.
+        """
+        db = ChatService._get_db()
+        await db["messages"].update_one(
+            {"message_id": message_id},
+            {"$set": {"delivery_status": "failed"}},
+        )
+        chat_logger.warning(f"⚠️  Message {message_id} marked delivery_status=failed")
 
     @staticmethod
     async def _deliver_reply(conv_doc: Dict[str, Any], reply_text: str) -> None:
@@ -280,6 +318,15 @@ class ChatService:
         from config import get_settings
         settings = get_settings()
 
+        if not settings.GMAIL_ENABLED:
+            # The kill switch has to bite here, not only in the poll worker:
+            # agent replies and AI replies to existing email conversations
+            # reach this path through the API, with no poller involved.
+            logger.info(
+                f"⏭️  GMAIL_ENABLED is false — not sending email reply | Conv: {conversation_id}"
+            )
+            return
+
         to_address = conv_doc.get("customer_identifier") or conv_doc.get("customer_email")
         if not to_address:
             logger.error(f"✗ Email reply has no recipient | Conv: {conversation_id}")
@@ -294,6 +341,8 @@ class ChatService:
 
         try:
             client = _gmail_client_factory()
+            if inspect.isawaitable(client):
+                client = await client
             await client.send_reply(
                 to=to_address,
                 subject=conv_doc.get("last_email_subject", "") or "Your support request",
@@ -400,6 +449,7 @@ class ChatService:
                 created_at=doc["created_at"].isoformat().replace("+00:00", "Z"),
                 token_count=doc.get("token_count"),
                 duration_ms=doc.get("duration_ms"),
+                delivery_status=doc.get("delivery_status"),
             )
             for doc in messages_docs
         ]
@@ -446,8 +496,11 @@ class ChatService:
         # Create message
         message_id = f"msg_{uuid.uuid4().hex[:12]}"
         now = datetime.now(timezone.utc)
-        # For ecommerce channel, agent replies should be unread until the client polls
-        # For other channels (email/whatsapp), they're immediately delivered so marked as read
+        # For ecommerce channel, agent replies should be unread until the client polls.
+        # For other channels they are marked read on the assumption that the reply is
+        # pushed out from here -- for email that assumption is made true by the
+        # _deliver_reply call below, and if that send fails the message is stamped
+        # delivery_status=failed and the caller gets an error.
         is_read = conv_doc.get("channel") != "ecommerce"
         await db["messages"].insert_one({
             "message_id": message_id,
@@ -500,6 +553,20 @@ class ChatService:
                             logger.warning(f"⚠️ Webhook failed ({resp.status}) for {webhook_url}: {await resp.text()}")
             except Exception as e:
                 logger.error(f"❌ Error sending webhook to {webhook_url}: {str(e)}")
+
+        # Actually deliver the reply on channels that need an outbound send.
+        # Without this an agent answering an escalated email conversation sees
+        # their message in the thread while the customer receives nothing.
+        # conv_doc was read before the insert, so it still carries the inbound
+        # last_email_message_id / email_thread_id needed to thread the reply.
+        try:
+            await ChatService._deliver_reply(conv_doc, req.message)
+        except EmailDeliveryError:
+            await ChatService._mark_delivery_failed(message_id)
+            # Propagate: an agent must not be told their reply was sent when
+            # it was not. The message row is kept (stamped as failed) so the
+            # text is not lost.
+            raise
 
         return ReplyResponse(
             success=True,

@@ -23,6 +23,9 @@ class MessageResponse(BaseModel):
     created_at: str
     token_count: Optional[int] = None
     duration_ms: Optional[int] = None
+    # Only ever set to "failed", and only on an outbound reply whose send
+    # raised. None means "no outbound send was attempted or it succeeded".
+    delivery_status: Optional[str] = None
 
 class ConversationSummary(BaseModel):
     conversation_id: str

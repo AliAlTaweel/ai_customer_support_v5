@@ -7,7 +7,7 @@ from models.chat import (
     SendMessageResponse, ListConversationsResponse,
     GetConversationResponse, ReplyResponse, StatusChangeResponse
 )
-from services.chat_service import ChatService
+from services.chat_service import ChatService, EmailDeliveryError
 
 logger = logging.getLogger(__name__)
 
@@ -108,6 +108,16 @@ async def reply_to_conversation(
         return response
     except HTTPException:
         raise
+    except EmailDeliveryError as e:
+        # The reply is saved and stamped delivery_status=failed, but it never
+        # reached the customer. 502 rather than 500: the failure is in the
+        # upstream mail provider, and the agent must see it as a failed send
+        # instead of a silent success.
+        logger.error(f"Agent reply saved but email delivery failed: {str(e)}")
+        raise HTTPException(
+            status_code=502,
+            detail="Reply saved but the email could not be sent. Please retry.",
+        )
     except Exception as e:
         logger.error(f"Error sending reply: {str(e)}")
         raise HTTPException(
