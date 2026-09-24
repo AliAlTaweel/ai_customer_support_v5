@@ -50,6 +50,54 @@ class Settings:
     ECOMMERCE_SHOP_BASE_URL: str = os.getenv("ECOMMERCE_SHOP_BASE_URL", "")
     ECOMMERCE_SHOP_API_SECRET: str = os.getenv("ECOMMERCE_SHOP_API_SECRET", "")
 
+    # Gmail email channel (optional -- single mailbox bound to one tenant)
+    @property
+    def GMAIL_ENABLED(self) -> bool:
+        return os.getenv("GMAIL_ENABLED", "false").lower() == "true"
+
+    @property
+    def GMAIL_TENANT_ID(self) -> str:
+        return os.getenv("GMAIL_TENANT_ID", "")
+
+    @property
+    def GMAIL_ADDRESS(self) -> str:
+        return os.getenv("GMAIL_ADDRESS", "").lower()
+
+    @property
+    def GMAIL_CLIENT_ID(self) -> str:
+        return os.getenv("GMAIL_CLIENT_ID", "")
+
+    @property
+    def GMAIL_CLIENT_SECRET(self) -> str:
+        return os.getenv("GMAIL_CLIENT_SECRET", "")
+
+    @property
+    def GMAIL_REFRESH_TOKEN(self) -> str:
+        return os.getenv("GMAIL_REFRESH_TOKEN", "")
+
+    @property
+    def GMAIL_POLL_INTERVAL_SECONDS(self) -> int:
+        return int(os.getenv("GMAIL_POLL_INTERVAL_SECONDS", "60"))
+
+    @property
+    def GMAIL_DRY_RUN(self) -> bool:
+        # Defaults to TRUE: a half-configured .env must never send real mail.
+        return os.getenv("GMAIL_DRY_RUN", "true").lower() != "false"
+
+    @property
+    def GMAIL_ALLOWED_SENDERS(self) -> list[str]:
+        # Empty means NOBODY is auto-answered. "*" opens it to everyone.
+        raw = os.getenv("GMAIL_ALLOWED_SENDERS", "")
+        return [part.strip().lower() for part in raw.split(",") if part.strip()]
+
+    @property
+    def GMAIL_MAX_REPLIES_PER_SENDER_HOUR(self) -> int:
+        return int(os.getenv("GMAIL_MAX_REPLIES_PER_SENDER_HOUR", "5"))
+
+    @property
+    def GMAIL_MAX_SENDS_PER_HOUR(self) -> int:
+        return int(os.getenv("GMAIL_MAX_SENDS_PER_HOUR", "50"))
+
     # CORS - Restrict origins by environment
     if ENVIRONMENT == "production":
         CORS_ORIGINS: list[str] = [
