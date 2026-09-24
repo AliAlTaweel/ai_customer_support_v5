@@ -17,17 +17,35 @@ channels were left behind — this is not a full platform, just the engine.
   - `services/ai_reply_service.py`, `kb_service.py`, `gemini_client.py` — the AI engine
   - `services/shopify_*`, `ecommerce_*` — optional order/product lookups used as tool calls during reply generation
   - `middleware/api_key_auth.py` — bearer API key → tenant_id (no Clerk)
+- `frontend/` — Next.js app (agent console UI: conversations, knowledge base, emails tab)
 
-## Running it
+## Running it — backend
 
 1. `cd backend && python3 -m venv venv && source venv/bin/activate && pip install -r requirements.txt`
 2. Copy `.env.example` to `.env` and fill in `MONGODB_URL` (Atlas, for vector search) and `GEMINI_API_KEY`
 3. `python -m scripts.seed_tenant --name "Acme Inc" --email admin@acme.com` — creates a tenant and prints an API key
-4. `python main.py` (or `uvicorn main:app --reload`)
+4. `python main.py` (or `uvicorn main:app --reload`) — or, if the email
+   channel is configured (see below), `./scripts/run_dev.sh` to also start
+   the Gmail poller
 5. `POST /api/chat/send` and `POST /api/knowledge-base/upload` with `Authorization: Bearer <api key>`
 
 Shopify and the ecommerce demo-shop integration are optional — the AI
 answers from the knowledge base alone if neither is configured.
+
+## Running it — frontend
+
+1. `cd frontend && npm install`
+2. Create `frontend/.env.local` (no `.env.example` is committed) with:
+   ```
+   NEXT_PUBLIC_BACKEND_URL=http://localhost:8000
+   NEXT_PUBLIC_API_KEY=<api key printed by scripts.seed_tenant>
+   ```
+3. `npm run dev` — serves the UI at `http://localhost:3000`, talking to the
+   backend over `NEXT_PUBLIC_BACKEND_URL`
+
+The backend must already be running (see above) for the frontend to load
+conversations or the knowledge base. `npm run build` / `npm run start` run
+the production build; `npm run lint` runs ESLint.
 
 ## Email channel (Gmail)
 
@@ -38,7 +56,9 @@ The AI can read a Gmail inbox and auto-reply to support email.
 2. `cd backend && python -m scripts.gmail_auth` — one-time browser consent;
    paste the printed `GMAIL_REFRESH_TOKEN` into `.env`
 3. Fill in the rest of the `GMAIL_*` block (see `.env.example`)
-4. `python -m scripts.poll_gmail --once` to run a single cycle
+4. `python -m scripts.poll_gmail --once` to run a single cycle, or
+   `./scripts/run_dev.sh` to run the API and the poller together for local
+   dev (starts both, stops both on Ctrl-C)
 
 Bring it up in three steps, each a config change rather than a code change:
 
