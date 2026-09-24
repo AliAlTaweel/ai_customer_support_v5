@@ -20,8 +20,24 @@
 - **Outbound replies always set `Auto-Submitted: auto-replied`.**
 - **Rate limit defaults:** 5 replies per sender per hour, 50 sends per hour total.
 - **googleapiclient is blocking.** Every call into it from async code must be wrapped in `await asyncio.to_thread(...)`.
-- **Never commit `secrets/`.** Task 1 gitignores it before any credential exists.
+- **Credentials live in `.env`**, as `GMAIL_CLIENT_ID` / `GMAIL_CLIENT_SECRET` / `GMAIL_REFRESH_TOKEN` — the approach v4.11 used (`ai_customer_support_v4.11/backend/config.py:77-79`). No token file. `.env` is already gitignored; Task 1 also adds `secrets/` as cheap insurance in case a client-secret JSON is ever dropped in.
 - Tenant comes from `GMAIL_TENANT_ID` config only — never from an email header.
+
+## Prior art
+
+`ai_customer_support_v4.11/backend/services/email_ingestion_service.py` is a
+working Gmail poller for the same engine. Read it before Task 6 — it already
+solves the credential construction and confirms the blocking-call constraint
+("Blocking Gmail API calls -- only ever call via asyncio.to_thread").
+
+Two things it does that this plan deliberately does **not** copy:
+
+- It tracks processed mail with a Gmail label (`AI_SUPPORT_PROCESSED`) rather
+  than a collection. Simpler, but it cannot support per-sender rate limiting
+  and provides no crash boundary between claiming a message and sending.
+- Its `_extract_body` only checks the top level and one level of `parts`, so
+  nested multipart messages yield an empty body. Task 3 walks the full MIME
+  tree instead.
 
 ## Refinements to the spec
 
@@ -46,7 +62,7 @@ Three deliberate departures from the approved spec, all recorded here so they ar
 | `backend/services/gmail_client.py` | Gmail API wrapper + MIME builder | 6 |
 | `backend/services/chat_service.py` | `_deliver_reply` email dispatch, `email_headers` param (modify) | 7 |
 | `backend/services/email_ingest_service.py` | Orchestration: gates → ingest → holding reply | 8 |
-| `backend/scripts/gmail_auth.py` | One-time OAuth consent | 9 |
+| `backend/scripts/gmail_auth.py` | One-time OAuth consent; prints a refresh token to paste into `.env` | 9 |
 | `backend/scripts/poll_gmail.py` | Worker loop (`--once`, `--interval`) | 9 |
 | `frontend/components/TabNav.tsx` | Add Emails tab (modify) | 10 |
 | `frontend/lib/api.ts` | `channel` param on `listConversations` (modify) | 10 |
@@ -69,7 +85,7 @@ Nothing can be test-driven until pytest runs at all. This task also adds the saf
 
 **Interfaces:**
 - Consumes: nothing.
-- Produces: `Settings.GMAIL_ENABLED: bool`, `GMAIL_TENANT_ID: str`, `GMAIL_ADDRESS: str`, `GMAIL_CREDENTIALS_PATH: str`, `GMAIL_TOKEN_PATH: str`, `GMAIL_POLL_INTERVAL_SECONDS: int`, `GMAIL_DRY_RUN: bool`, `GMAIL_ALLOWED_SENDERS: list[str]`, `GMAIL_MAX_REPLIES_PER_SENDER_HOUR: int`, `GMAIL_MAX_SENDS_PER_HOUR: int` — all read-only properties on `Settings`.
+- Produces: `Settings.GMAIL_ENABLED: bool`, `GMAIL_TENANT_ID: str`, `GMAIL_ADDRESS: str`, `GMAIL_CLIENT_ID: str`, `GMAIL_CLIENT_SECRET: str`, `GMAIL_REFRESH_TOKEN: str`, `GMAIL_POLL_INTERVAL_SECONDS: int`, `GMAIL_DRY_RUN: bool`, `GMAIL_ALLOWED_SENDERS: list[str]`, `GMAIL_MAX_REPLIES_PER_SENDER_HOUR: int`, `GMAIL_MAX_SENDS_PER_HOUR: int` — all read-only properties on `Settings`.
 
 - [ ] **Step 1: Add dependencies and gitignore the secrets directory**
 
@@ -203,12 +219,16 @@ Insert after the `ECOMMERCE_SHOP_*` block (`config.py:48-51`). All properties, p
         return os.getenv("GMAIL_ADDRESS", "").lower()
 
     @property
-    def GMAIL_CREDENTIALS_PATH(self) -> str:
-        return os.getenv("GMAIL_CREDENTIALS_PATH", "secrets/gmail_credentials.json")
+    def GMAIL_CLIENT_ID(self) -> str:
+        return os.getenv("GMAIL_CLIENT_ID", "")
 
     @property
-    def GMAIL_TOKEN_PATH(self) -> str:
-        return os.getenv("GMAIL_TOKEN_PATH", "secrets/gmail_token.json")
+    def GMAIL_CLIENT_SECRET(self) -> str:
+        return os.getenv("GMAIL_CLIENT_SECRET", "")
+
+    @property
+    def GMAIL_REFRESH_TOKEN(self) -> str:
+        return os.getenv("GMAIL_REFRESH_TOKEN", "")
 
     @property
     def GMAIL_POLL_INTERVAL_SECONDS(self) -> int:
@@ -1254,6 +1274,8 @@ import base64
 from email import message_from_bytes
 from unittest.mock import MagicMock
 
+import pytest
+
 from services.gmail_client import GMAIL_SCOPES, GmailClient, build_reply_mime
 
 
@@ -1356,6 +1378,21 @@ async def test_send_reply_passes_thread_id():
     assert "raw" in body
 
 
+def test_from_settings_names_the_missing_credentials(monkeypatch):
+    monkeypatch.setenv("GMAIL_CLIENT_ID", "id-123")
+    monkeypatch.delenv("GMAIL_CLIENT_SECRET", raising=False)
+    monkeypatch.delenv("GMAIL_REFRESH_TOKEN", raising=False)
+
+    with pytest.raises(RuntimeError) as exc:
+        GmailClient.from_settings()
+
+    message = str(exc.value)
+    assert "GMAIL_CLIENT_SECRET" in message
+    assert "GMAIL_REFRESH_TOKEN" in message
+    assert "GMAIL_CLIENT_ID" not in message  # this one was set
+    assert "scripts.gmail_auth" in message
+
+
 async def test_mark_read_removes_unread_label():
     service = MagicMock()
     service.users().messages().modify().execute.return_value = {}
@@ -1384,7 +1421,6 @@ is blocking, so every API call is pushed to a worker thread.
 """
 import asyncio
 import base64
-import os
 from email.message import EmailMessage
 from typing import Optional
 
@@ -1433,29 +1469,38 @@ class GmailClient:
 
     @classmethod
     def from_settings(cls) -> "GmailClient":
-        """Build a client from the stored OAuth token.
+        """Build a client from the refresh token in .env.
 
-        Run scripts/gmail_auth.py first to create the token file.
+        Same approach as v4.11's email_ingestion_service. Passing token=None
+        makes the library fetch a fresh access token on first use, so nothing
+        expiring is ever persisted.
+
+        Run scripts/gmail_auth.py once to obtain GMAIL_REFRESH_TOKEN.
         """
-        from google.auth.transport.requests import Request
         from google.oauth2.credentials import Credentials
         from googleapiclient.discovery import build
 
         settings = get_settings()
-        token_path = settings.GMAIL_TOKEN_PATH
 
-        if not os.path.exists(token_path):
+        missing = [
+            name
+            for name in ("GMAIL_CLIENT_ID", "GMAIL_CLIENT_SECRET", "GMAIL_REFRESH_TOKEN")
+            if not getattr(settings, name)
+        ]
+        if missing:
             raise RuntimeError(
-                f"No Gmail token at {token_path}. "
+                f"Gmail credentials missing from .env: {', '.join(missing)}. "
                 "Run: python -m scripts.gmail_auth"
             )
 
-        creds = Credentials.from_authorized_user_file(token_path, GMAIL_SCOPES)
-        if creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-            with open(token_path, "w") as handle:
-                handle.write(creds.to_json())
-            logger.info("Refreshed Gmail OAuth token")
+        creds = Credentials(
+            token=None,
+            refresh_token=settings.GMAIL_REFRESH_TOKEN,
+            client_id=settings.GMAIL_CLIENT_ID,
+            client_secret=settings.GMAIL_CLIENT_SECRET,
+            token_uri="https://oauth2.googleapis.com/token",
+            scopes=GMAIL_SCOPES,
+        )
 
         service = build("gmail", "v1", credentials=creds, cache_discovery=False)
         return cls(service=service, mailbox_address=settings.GMAIL_ADDRESS)
@@ -1531,7 +1576,7 @@ class GmailClient:
 - [ ] **Step 4: Run the tests to verify they pass**
 
 Run: `pytest tests/test_gmail_client.py -v`
-Expected: 10 passed
+Expected: 11 passed
 
 - [ ] **Step 5: Commit**
 
@@ -2240,14 +2285,16 @@ Expected: FAIL — `ModuleNotFoundError: No module named 'scripts.poll_gmail'`
 ```python
 """One-time Gmail OAuth consent.
 
-Opens a browser, asks you to grant access to the support mailbox, and writes
-the refresh token to GMAIL_TOKEN_PATH. Run once before the poller.
+Opens a browser, asks you to grant access to the support mailbox, then PRINTS
+the refresh token for you to paste into .env. Nothing is written to disk --
+credentials live in .env only.
+
+Reads GMAIL_CLIENT_ID and GMAIL_CLIENT_SECRET from .env, so fill those in
+first from your existing OAuth 2.0 Client ID.
 
 Usage:
     python -m scripts.gmail_auth
 """
-import os
-
 from google_auth_oauthlib.flow import InstalledAppFlow
 
 from config import get_settings
@@ -2256,24 +2303,37 @@ from services.gmail_client import GMAIL_SCOPES
 
 def main() -> int:
     settings = get_settings()
-    credentials_path = settings.GMAIL_CREDENTIALS_PATH
-    token_path = settings.GMAIL_TOKEN_PATH
 
-    if not os.path.exists(credentials_path):
-        print(f"✗ No OAuth client file at {credentials_path}")
-        print("  Download your OAuth 2.0 Client ID JSON from Google Cloud Console")
-        print(f"  and save it there (the secrets/ directory is gitignored).")
+    if not settings.GMAIL_CLIENT_ID or not settings.GMAIL_CLIENT_SECRET:
+        print("✗ Set GMAIL_CLIENT_ID and GMAIL_CLIENT_SECRET in .env first.")
+        print("  Both come from your OAuth 2.0 Client ID in Google Cloud Console.")
+        print("  The client must be of type 'Desktop app' for this flow to work.")
         return 1
 
-    flow = InstalledAppFlow.from_client_secrets_file(credentials_path, GMAIL_SCOPES)
-    creds = flow.run_local_server(port=0)
+    client_config = {
+        "installed": {
+            "client_id": settings.GMAIL_CLIENT_ID,
+            "client_secret": settings.GMAIL_CLIENT_SECRET,
+            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+            "token_uri": "https://oauth2.googleapis.com/token",
+            "redirect_uris": ["http://localhost"],
+        }
+    }
 
-    os.makedirs(os.path.dirname(token_path) or ".", exist_ok=True)
-    with open(token_path, "w") as handle:
-        handle.write(creds.to_json())
+    flow = InstalledAppFlow.from_client_config(client_config, GMAIL_SCOPES)
+    # access_type=offline + prompt=consent is what makes Google actually return
+    # a refresh token; without prompt=consent a repeat authorization returns none.
+    creds = flow.run_local_server(port=0, access_type="offline", prompt="consent")
 
-    print(f"✓ Token written to {token_path}")
-    print("  This file is a live credential for the mailbox. Never commit it.")
+    if not creds.refresh_token:
+        print("✗ Google did not return a refresh token. Revoke the app's access at")
+        print("  https://myaccount.google.com/permissions and run this again.")
+        return 1
+
+    print("\n✓ Add this line to backend/.env:\n")
+    print(f"GMAIL_REFRESH_TOKEN={creds.refresh_token}\n")
+    print("  This is a live credential for the mailbox. .env is gitignored --")
+    print("  keep it that way.")
     return 0
 
 
@@ -2382,8 +2442,11 @@ Add to `backend/.env.example` (create the file with these lines if it does not e
 GMAIL_ENABLED=false
 GMAIL_TENANT_ID=
 GMAIL_ADDRESS=support@yourdomain.com
-GMAIL_CREDENTIALS_PATH=secrets/gmail_credentials.json
-GMAIL_TOKEN_PATH=secrets/gmail_token.json
+# From your OAuth 2.0 Client ID (type: Desktop app) in Google Cloud Console.
+GMAIL_CLIENT_ID=
+GMAIL_CLIENT_SECRET=
+# Obtain once via: python -m scripts.gmail_auth
+GMAIL_REFRESH_TOKEN=
 GMAIL_POLL_INTERVAL_SECONDS=60
 # Safety: dry run logs replies instead of sending them.
 GMAIL_DRY_RUN=true
@@ -2400,9 +2463,11 @@ Add a section to the root `README.md` after the "Running it" section:
 
 The AI can read a Gmail inbox and auto-reply to support email.
 
-1. Put your OAuth 2.0 Client ID JSON at `backend/secrets/gmail_credentials.json`
-2. `cd backend && python -m scripts.gmail_auth` — one-time browser consent
-3. Fill in the `GMAIL_*` block in `.env` (see `.env.example`)
+1. Put `GMAIL_CLIENT_ID` and `GMAIL_CLIENT_SECRET` in `backend/.env` from your
+   OAuth 2.0 Client ID (type: Desktop app)
+2. `cd backend && python -m scripts.gmail_auth` — one-time browser consent;
+   paste the printed `GMAIL_REFRESH_TOKEN` into `.env`
+3. Fill in the rest of the `GMAIL_*` block (see `.env.example`)
 4. `python -m scripts.poll_gmail --once` to run a single cycle
 
 Bring it up in three steps, each a config change rather than a code change:
