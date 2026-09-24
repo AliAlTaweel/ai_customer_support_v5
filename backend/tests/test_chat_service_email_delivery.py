@@ -1,5 +1,3 @@
-import threading
-
 import pytest
 
 import services.chat_service as chat_service_module
@@ -253,31 +251,6 @@ async def test_awaitable_factory_is_awaited(monkeypatch):
     await ChatService._deliver_reply(_email_conv(), "Your order shipped.")
 
     assert len(client.sent) == 1
-
-
-async def test_gmail_client_is_built_once_and_off_the_event_loop(monkeypatch):
-    import services.gmail_client as gmail_client_module
-
-    builds = []
-
-    def fake_from_settings():
-        # asyncio.to_thread runs this on a worker thread, never the loop's.
-        builds.append(threading.current_thread())
-        return object()
-
-    monkeypatch.setattr(
-        gmail_client_module.GmailClient, "from_settings", staticmethod(fake_from_settings)
-    )
-    gmail_client_module.reset_client()
-    try:
-        first = await gmail_client_module.get_client()
-        second = await gmail_client_module.get_client()
-    finally:
-        gmail_client_module.reset_client()
-
-    assert first is second                       # not rebuilt per reply
-    assert len(builds) == 1
-    assert builds[0] is not threading.main_thread()  # blocking build left the loop
 
 
 # --- I4: the injection wrapper lives at the prompt boundary ----------------

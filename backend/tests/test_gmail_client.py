@@ -1,9 +1,12 @@
+import asyncio
 import base64
+import threading
 from email import message_from_bytes
 from unittest.mock import MagicMock
 
 import pytest
 
+import services.gmail_client as gmail_client
 from services.gmail_client import GMAIL_SCOPES, GmailClient, build_reply_mime
 
 
@@ -130,3 +133,51 @@ async def test_mark_read_removes_unread_label():
 
     body = service.users().messages().modify.call_args.kwargs["body"]
     assert body == {"removeLabelIds": ["UNREAD"]}
+
+
+# --- Process-wide client ---------------------------------------------------
+
+
+@pytest.fixture
+def counting_build(monkeypatch):
+    """Replace the blocking from_settings with a thread-recording counter."""
+    builds = []
+
+    def fake_from_settings():
+        builds.append(threading.current_thread())
+        return object()
+
+    monkeypatch.setattr(
+        gmail_client.GmailClient, "from_settings", staticmethod(fake_from_settings)
+    )
+    gmail_client.reset_client()
+    yield builds
+    gmail_client.reset_client()
+
+
+async def test_concurrent_callers_share_one_client(counting_build):
+    """Single-flight: a burst of replies must not each build their own client
+    (and their own credentials object)."""
+    clients = await asyncio.gather(*(gmail_client.get_client() for _ in range(5)))
+
+    assert len(counting_build) == 1
+    assert len({id(c) for c in clients}) == 1
+
+
+async def test_client_is_built_off_the_event_loop(counting_build):
+    """googleapiclient's build() is blocking; the plan requires every call into
+    it from async code to go through asyncio.to_thread."""
+    await gmail_client.get_client()
+
+    assert counting_build[0] is not threading.main_thread()
+
+
+def test_lock_is_not_bound_to_the_first_event_loop(counting_build):
+    """The API and the poll worker each run their own loop in their own
+    process, and tests run one loop per test: a module-level asyncio.Lock
+    created at import would bind to the first and break the rest."""
+    first = asyncio.run(gmail_client.get_client())
+    second = asyncio.run(gmail_client.get_client())
+
+    assert first is second
+    assert len(counting_build) == 1

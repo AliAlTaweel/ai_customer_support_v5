@@ -158,7 +158,24 @@ class GmailClient:
 
 
 _client: Optional[GmailClient] = None
-_client_lock = asyncio.Lock()
+_lock: Optional[asyncio.Lock] = None
+_lock_loop = None
+
+
+async def _single_flight_lock() -> asyncio.Lock:
+    """A lock bound to the running loop.
+
+    An asyncio.Lock belongs to whichever loop first awaits it, so a
+    module-level one created at import would break the second loop in a
+    process (the API and the poll worker each run their own, and tests run
+    one per test). Rebinding when the loop changes keeps single-flight
+    semantics without that trap.
+    """
+    global _lock, _lock_loop
+    loop = asyncio.get_running_loop()
+    if _lock is None or _lock_loop is not loop:
+        _lock, _lock_loop = asyncio.Lock(), loop
+    return _lock
 
 
 async def get_client() -> GmailClient:
@@ -173,7 +190,7 @@ async def get_client() -> GmailClient:
     """
     global _client
     if _client is None:
-        async with _client_lock:
+        async with await _single_flight_lock():
             if _client is None:
                 _client = await asyncio.to_thread(GmailClient.from_settings)
     return _client
@@ -181,5 +198,7 @@ async def get_client() -> GmailClient:
 
 def reset_client() -> None:
     """Drop the cached client. For tests and credential rotation."""
-    global _client
+    global _client, _lock, _lock_loop
     _client = None
+    _lock = None
+    _lock_loop = None
