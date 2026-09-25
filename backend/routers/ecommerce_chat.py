@@ -6,12 +6,12 @@ AI's answer back in the same HTTP response — unlike the widget channel,
 which polls for the reply instead.
 """
 
-import bcrypt
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from config import get_settings
-from repositories.mongo_client import MongoConnection
+from repositories.conversation_repository import ConversationRepository
+from services.api_key_auth_service import APIKeyAuthService
 from services.chat_service import ChatService
 from utils.logger import logger
 
@@ -41,26 +41,7 @@ async def _verify_bearer_tenant(request: Request) -> str:
     if not token:
         raise HTTPException(status_code=401, detail="Missing bearer token")
 
-    db = MongoConnection.get_database()
-    tenant_id = None
-
-    if token.startswith("sk_live_") or token.startswith("sk_test_"):
-        api_key_doc = await db["tenant_api_keys"].find_one({
-            "active": True,
-            "api_key_prefix": token[:12],
-        })
-        if api_key_doc:
-            stored_hash = api_key_doc.get("api_key_hash", b"")
-            if isinstance(stored_hash, str):
-                stored_hash = stored_hash.encode()
-            if bcrypt.checkpw(token.encode(), stored_hash):
-                tenant_id = api_key_doc["tenant_id"]
-
-    if not tenant_id:
-        tenant_doc = await db["tenants"].find_one({"api_key": token, "status": "active"})
-        if tenant_doc:
-            tenant_id = tenant_doc["tenant_id"]
-
+    tenant_id = await APIKeyAuthService.authenticate(token)
     if not tenant_id:
         raise HTTPException(status_code=401, detail="Invalid API key")
 
@@ -99,13 +80,10 @@ async def get_ecommerce_messages(request: Request, userId: str):
     if not userId or not isinstance(userId, str):
         raise HTTPException(status_code=400, detail="userId is required")
 
-    db = MongoConnection.get_database()
-
-    # Find conversation for this user
-    conv_doc = await db["conversations"].find_one({
+    conv_doc = await ConversationRepository.find_conversation({
         "tenant_id": tenant_id,
         "channel": "ecommerce",
-        "customer_identifier": userId
+        "customer_identifier": userId,
     })
 
     if not conv_doc:
@@ -113,21 +91,10 @@ async def get_ecommerce_messages(request: Request, userId: str):
 
     conversation_id = conv_doc["conversation_id"]
 
-    # Get all unread agent/AI messages (exclude customer messages)
-    messages = await db["messages"].find({
-        "conversation_id": conversation_id,
-        "tenant_id": tenant_id,
-        "sender": {"$in": ["agent", "ai"]},
-        "read": False
-    }).sort("created_at", 1).to_list(length=None)
+    messages = await ConversationRepository.get_unread_outbound_messages(conversation_id, tenant_id)
 
-    # Mark these messages as read
     if messages:
-        await db["messages"].update_many({
-            "conversation_id": conversation_id,
-            "sender": {"$in": ["agent", "ai"]},
-            "read": False
-        }, {"$set": {"read": True}})
+        await ConversationRepository.mark_outbound_messages_read(conversation_id)
 
     return {
         "conversation_id": conversation_id,
