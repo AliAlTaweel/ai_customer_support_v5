@@ -1,10 +1,11 @@
 import pytest
 
-import services.chat_service as chat_service_module
+import services.reply_delivery_service as reply_delivery_module
 from models.chat import ReplyToConversationRequest
 from services.chat_service import ChatService, EmailDeliveryError
+from services.reply_delivery_service import ReplyDeliveryService
 from services.ai_reply_service import AIReplyResult, AIReplyService
-from services.kb_service import KBService
+from services.tenant_settings_service import TenantSettingsService
 from tests.fakes import FakeGmailClient
 
 
@@ -12,7 +13,7 @@ from tests.fakes import FakeGmailClient
 def fake_gmail(monkeypatch):
     client = FakeGmailClient()
     monkeypatch.setattr(
-        chat_service_module, "_gmail_client_factory", lambda: client
+        reply_delivery_module, "_gmail_client_factory", lambda: client
     )
     monkeypatch.setenv("GMAIL_ENABLED", "true")
     monkeypatch.setenv("GMAIL_DRY_RUN", "false")
@@ -34,14 +35,14 @@ def _email_conv(**overrides):
 
 
 async def test_widget_conversation_sends_nothing(fake_gmail):
-    await ChatService._deliver_reply(
+    await ReplyDeliveryService.deliver_reply(
         {"conversation_id": "conv_2", "channel": "widget"}, "Hello"
     )
     assert fake_gmail.sent == []
 
 
 async def test_email_conversation_sends_reply(fake_gmail):
-    await ChatService._deliver_reply(_email_conv(), "Your order shipped.")
+    await ReplyDeliveryService.deliver_reply(_email_conv(), "Your order shipped.")
 
     assert len(fake_gmail.sent) == 1
     sent = fake_gmail.sent[0]
@@ -55,13 +56,13 @@ async def test_email_conversation_sends_reply(fake_gmail):
 async def test_dry_run_does_not_send(fake_gmail, monkeypatch):
     monkeypatch.setenv("GMAIL_DRY_RUN", "true")
 
-    await ChatService._deliver_reply(_email_conv(), "Your order shipped.")
+    await ReplyDeliveryService.deliver_reply(_email_conv(), "Your order shipped.")
 
     assert fake_gmail.sent == []
 
 
 async def test_missing_recipient_does_not_raise(fake_gmail):
-    await ChatService._deliver_reply(
+    await ReplyDeliveryService.deliver_reply(
         _email_conv(customer_identifier=None), "Your order shipped."
     )
     assert fake_gmail.sent == []
@@ -78,7 +79,7 @@ async def test_send_failure_raises_email_delivery_error(fake_gmail, monkeypatch)
     # (and, via ProcessedEmailStore's unique index, never retry) even though
     # the customer never received anything.
     with pytest.raises(EmailDeliveryError):
-        await ChatService._deliver_reply(_email_conv(), "Your order shipped.")
+        await ReplyDeliveryService.deliver_reply(_email_conv(), "Your order shipped.")
 
     assert fake_gmail.sent == []
 
@@ -152,16 +153,19 @@ class _FakeDB:
 
 @pytest.fixture
 def fake_db(monkeypatch):
+    from repositories.conversation_repository import ConversationRepository
+
     db = _FakeDB()
-    monkeypatch.setattr(ChatService, "_get_db", staticmethod(lambda: db))
+    monkeypatch.setattr(ConversationRepository, "_get_db", staticmethod(lambda: db))
     return db
 
 
 @pytest.fixture
 def ai_answers(monkeypatch):
     """Route the AI-reply pipeline straight to an "answered" result so
-    receive_message reaches _deliver_reply without needing real KB/AI calls."""
-    monkeypatch.setattr(KBService, "get_ai_enabled", staticmethod(lambda tenant_id: _true()))
+    receive_message reaches ReplyDeliveryService.deliver_reply without needing
+    real KB/AI calls."""
+    monkeypatch.setattr(TenantSettingsService, "get_ai_enabled", staticmethod(lambda tenant_id: _true()))
     monkeypatch.setattr(AIReplyService, "tenant_can_use_ai", staticmethod(lambda tenant_id: _true()))
 
     async def fake_generate_reply(tenant_id, customer_message, customer_identifier=None):
@@ -209,12 +213,12 @@ async def test_dry_run_does_not_raise(fake_gmail, monkeypatch):
     monkeypatch.setenv("GMAIL_DRY_RUN", "true")
 
     # Should complete without raising.
-    await ChatService._deliver_reply(_email_conv(), "Your order shipped.")
+    await ReplyDeliveryService.deliver_reply(_email_conv(), "Your order shipped.")
 
 
 async def test_widget_conversation_does_not_raise(fake_gmail):
     # Should complete without raising.
-    await ChatService._deliver_reply(
+    await ReplyDeliveryService.deliver_reply(
         {"conversation_id": "conv_2", "channel": "widget"}, "Hello"
     )
 
@@ -228,7 +232,7 @@ async def test_disabled_channel_sends_nothing(fake_gmail, monkeypatch):
     with the channel supposedly turned off."""
     monkeypatch.setenv("GMAIL_ENABLED", "false")
 
-    await ChatService._deliver_reply(_email_conv(), "Your order shipped.")
+    await ReplyDeliveryService.deliver_reply(_email_conv(), "Your order shipped.")
 
     assert fake_gmail.sent == []
 
@@ -244,11 +248,11 @@ async def test_awaitable_factory_is_awaited(monkeypatch):
     async def async_factory():
         return client
 
-    monkeypatch.setattr(chat_service_module, "_gmail_client_factory", async_factory)
+    monkeypatch.setattr(reply_delivery_module, "_gmail_client_factory", async_factory)
     monkeypatch.setenv("GMAIL_ENABLED", "true")
     monkeypatch.setenv("GMAIL_DRY_RUN", "false")
 
-    await ChatService._deliver_reply(_email_conv(), "Your order shipped.")
+    await ReplyDeliveryService.deliver_reply(_email_conv(), "Your order shipped.")
 
     assert len(client.sent) == 1
 
@@ -261,7 +265,7 @@ def prompt_recorder(monkeypatch):
     """Capture exactly what text reaches AIReplyService.generate_reply."""
     prompts = []
 
-    monkeypatch.setattr(KBService, "get_ai_enabled", staticmethod(lambda tenant_id: _true()))
+    monkeypatch.setattr(TenantSettingsService, "get_ai_enabled", staticmethod(lambda tenant_id: _true()))
     monkeypatch.setattr(AIReplyService, "tenant_can_use_ai", staticmethod(lambda tenant_id: _true()))
 
     async def fake_generate_reply(tenant_id, customer_message, customer_identifier=None):
@@ -307,7 +311,7 @@ async def test_escalated_email_preview_shows_the_customers_words(fake_gmail, fak
     On the escalation path -- exactly the conversations an agent works -- the
     customer's message is the latest, and every one of these previews used to
     be the identical "The following is UNTRUSTED content..." prefix."""
-    monkeypatch.setattr(KBService, "get_ai_enabled", staticmethod(lambda tenant_id: _true()))
+    monkeypatch.setattr(TenantSettingsService, "get_ai_enabled", staticmethod(lambda tenant_id: _true()))
     monkeypatch.setattr(AIReplyService, "tenant_can_use_ai", staticmethod(lambda tenant_id: _true()))
 
     async def escalate(tenant_id, customer_message, customer_identifier=None):

@@ -1,7 +1,8 @@
-"""Chat service for business logic operations."""
+"""Chat service: orchestrates the customer chat API. Persistence lives in
+ConversationRepository, outbound dispatch in ReplyDeliveryService -- this
+module decides *what* should happen and in what order."""
 
 from datetime import datetime, timezone
-import inspect
 import uuid
 from typing import Optional, List, Dict, Any
 from models.chat import (
@@ -11,40 +12,22 @@ from models.chat import (
     ConversationDetailResponse, MessageResponse, ReplyResponse,
     StatusChangeResponse
 )
-from repositories.mongo_client import MongoConnection
+from repositories.conversation_repository import ConversationRepository
 from utils.logger import logger
 from utils.logging_setup import setup_chat_logger, setup_ai_logger
-from services.kb_service import KBService
+from services.tenant_settings_service import TenantSettingsService
 from services.ai_reply_service import AIReplyService
+from services.reply_delivery_service import EmailDeliveryError, ReplyDeliveryService
+
+__all__ = ["ChatService", "EmailDeliveryError"]
 
 # Dedicated loggers for chat and AI operations
 chat_logger = setup_chat_logger()
 ai_logger = setup_ai_logger()
 
 
-async def _gmail_client_factory():
-    """Indirection so tests can inject a fake Gmail client.
-
-    Returns the process-wide client rather than building one per reply --
-    googleapiclient's build() is blocking and must not run on the loop.
-    Monkeypatched replacements may be sync or async; the call site handles
-    both.
-    """
-    from services.gmail_client import get_client
-    return await get_client()
-
-
-class EmailDeliveryError(Exception):
-    """Raised when an email reply was attempted and the send failed."""
-
-
 class ChatService:
     """Business logic for customer chat API"""
-
-    @staticmethod
-    def _get_db():
-        """Get MongoDB database"""
-        return MongoConnection.get_database()
 
     @staticmethod
     async def receive_message(
@@ -60,8 +43,6 @@ class ChatService:
     ) -> SendMessageResponse:
         """Ingest a customer message from any channel (widget, email, whatsapp),
         creating or reusing a conversation, then triggering an AI reply."""
-        db = ChatService._get_db()
-
         conversation_id = None
         if customer_identifier:
             if channel == "widget":
@@ -78,7 +59,7 @@ class ChatService:
                     "channel": channel,
                     "customer_identifier": customer_identifier,
                 }
-            existing = await db["conversations"].find_one(query)
+            existing = await ConversationRepository.find_conversation(query)
             if existing:
                 conversation_id = existing["conversation_id"]
                 logger.info(f"   Found existing {channel} conversation: {conversation_id}")
@@ -113,8 +94,8 @@ class ChatService:
             if whatsapp_message_id:
                 conversation_doc["whatsapp_message_id"] = whatsapp_message_id
 
-            result = await db["conversations"].insert_one(conversation_doc)
-            logger.info(f"   Created new {channel} conversation: {conversation_id} (ID: {result.inserted_id})")
+            inserted_id = await ConversationRepository.insert_conversation(conversation_doc)
+            logger.info(f"   Created new {channel} conversation: {conversation_id} (ID: {inserted_id})")
         else:
             updates = {}
             if webhook_url:
@@ -127,10 +108,10 @@ class ChatService:
             if whatsapp_message_id:
                 updates["whatsapp_message_id"] = whatsapp_message_id
             if updates:
-                await db["conversations"].update_one({"conversation_id": conversation_id}, {"$set": updates})
+                await ConversationRepository.update_conversation(conversation_id, set_fields=updates)
 
         message_id = f"msg_{uuid.uuid4().hex[:12]}"
-        result = await db["messages"].insert_one({
+        await ConversationRepository.insert_message({
             "message_id": message_id,
             "conversation_id": conversation_id,
             "tenant_id": tenant_id,
@@ -142,20 +123,18 @@ class ChatService:
         })
         chat_logger.info(f"📨 Customer message saved | Conv: {conversation_id} | User: {customer_identifier} | Channel: {channel} | MsgID: {message_id}")
 
-        await db["conversations"].update_one(
-            {"conversation_id": conversation_id},
-            {
-                "$set": {
-                    "updated_at": now,
-                    "last_message_at": now,
-                    "last_message_preview": message[:100],
-                    "status": "waiting_agent_response"
-                },
-                "$inc": {
-                    "message_count": 1,
-                    "unread_count": 1
-                }
-            }
+        await ConversationRepository.update_conversation(
+            conversation_id,
+            set_fields={
+                "updated_at": now,
+                "last_message_at": now,
+                "last_message_preview": message[:100],
+                "status": "waiting_agent_response",
+            },
+            inc_fields={
+                "message_count": 1,
+                "unread_count": 1,
+            },
         )
 
         chat_logger.info(f"📬 Conversation updated | Conv: {conversation_id} | Status: waiting_agent_response | Unread: +1")
@@ -195,9 +174,7 @@ class ChatService:
         conversation's channel (email/whatsapp send, or no-op for widget/ecommerce,
         which return the answer synchronously to their own caller instead) and
         return the answer text so a synchronous caller can use it directly."""
-        db = ChatService._get_db()
-
-        conv_doc = await db["conversations"].find_one({"conversation_id": conversation_id})
+        conv_doc = await ConversationRepository.find_conversation({"conversation_id": conversation_id})
         if not conv_doc:
             logger.info(f"🔍 AI reply skipped: conversation {conversation_id} not found")
             return None
@@ -207,7 +184,7 @@ class ChatService:
             ai_logger.info(f"⏭️  AI SKIPPED | Conv: {conversation_id} | Reason: handling_mode={handling_mode} (not 'ai')")
             return None
 
-        ai_enabled = await KBService.get_ai_enabled(tenant_id)
+        ai_enabled = await TenantSettingsService.get_ai_enabled(tenant_id)
         if not ai_enabled:
             ai_logger.info(f"⏭️  AI SKIPPED | Tenant: {tenant_id} | Reason: ai_enabled=False")
             return None
@@ -232,7 +209,7 @@ class ChatService:
 
         if result.answered:
             ai_message_id = f"msg_{uuid.uuid4().hex[:12]}"
-            await db["messages"].insert_one({
+            await ConversationRepository.insert_message({
                 "message_id": ai_message_id,
                 "conversation_id": conversation_id,
                 "tenant_id": tenant_id,
@@ -245,125 +222,39 @@ class ChatService:
                 "token_count": result.token_count,
                 "duration_ms": result.duration_ms,
             })
-            await db["conversations"].update_one(
-                {"conversation_id": conversation_id},
-                {
-                    "$set": {
-                        "updated_at": now,
-                        "last_message_at": now,
-                        "last_message_preview": result.answer[:100],
-                        "status": "open"
-                    },
-                    "$inc": {"message_count": 1}
-                }
+            await ConversationRepository.update_conversation(
+                conversation_id,
+                set_fields={
+                    "updated_at": now,
+                    "last_message_at": now,
+                    "last_message_preview": result.answer[:100],
+                    "status": "open",
+                },
+                inc_fields={"message_count": 1},
             )
             ai_logger.info(f"✅ AI ANSWERED | Conv: {conversation_id} | Tokens: {result.token_count} | Duration: {result.duration_ms}ms")
             try:
-                await ChatService._deliver_reply(conv_doc, result.answer)
+                await ReplyDeliveryService.deliver_reply(conv_doc, result.answer)
             except EmailDeliveryError:
                 # The message row is already written, so without this marker
                 # the Emails tab shows an ordinary sent bubble for a reply the
                 # customer never received. Re-raise so the ingestion pipeline
                 # still records delivery_failed.
-                await ChatService._mark_delivery_failed(ai_message_id)
+                await ConversationRepository.mark_message(ai_message_id, {"delivery_status": "failed"})
+                chat_logger.warning(f"⚠️  Message {ai_message_id} marked delivery_status=failed")
                 raise
             return result.answer
         else:
-            await db["conversations"].update_one(
-                {"conversation_id": conversation_id},
-                {
-                    "$set": {
-                        "handling_mode": "human",
-                        "status": "waiting_agent_response",
-                        "updated_at": now
-                    }
-                }
+            await ConversationRepository.update_conversation(
+                conversation_id,
+                set_fields={
+                    "handling_mode": "human",
+                    "status": "waiting_agent_response",
+                    "updated_at": now,
+                },
             )
             ai_logger.info(f"🔄 AI ESCALATED | Conv: {conversation_id} | Reason: {result.escalate_reason}")
             return None
-
-    @staticmethod
-    async def _mark_delivery_failed(message_id: str) -> None:
-        """Stamp a persisted message as not delivered.
-
-        A message row with no delivery_status is, and must stay, an ordinary
-        delivered message -- only failures are marked, so existing rows and
-        every non-email channel are unaffected.
-        """
-        db = ChatService._get_db()
-        await db["messages"].update_one(
-            {"message_id": message_id},
-            {"$set": {"delivery_status": "failed"}},
-        )
-        chat_logger.warning(f"⚠️  Message {message_id} marked delivery_status=failed")
-
-    @staticmethod
-    async def _deliver_reply(conv_doc: Dict[str, Any], reply_text: str) -> None:
-        """Dispatch an AI/agent reply to the conversation's channel.
-
-        Widget and ecommerce replies are retrieved by the frontend via polling
-        or the synchronous response, so they need no outbound send. Email
-        replies must actually be mailed.
-        """
-        channel = conv_doc.get("channel", "widget")
-        conversation_id = conv_doc.get("conversation_id")
-
-        if channel != "email":
-            logger.info(
-                f"⏭️  No outbound delivery needed for {channel} channel "
-                f"(frontend/polling will retrieve) | Conv: {conversation_id}"
-            )
-            return
-
-        from config import get_settings
-        settings = get_settings()
-
-        if not settings.GMAIL_ENABLED:
-            # The kill switch has to bite here, not only in the poll worker:
-            # agent replies and AI replies to existing email conversations
-            # reach this path through the API, with no poller involved.
-            logger.info(
-                f"⏭️  GMAIL_ENABLED is false — not sending email reply | Conv: {conversation_id}"
-            )
-            return
-
-        to_address = conv_doc.get("customer_identifier") or conv_doc.get("customer_email")
-        if not to_address:
-            logger.error(f"✗ Email reply has no recipient | Conv: {conversation_id}")
-            return
-
-        if settings.GMAIL_DRY_RUN:
-            logger.info(
-                f"🧪 DRY RUN — would email {to_address} | Conv: {conversation_id}\n"
-                f"{reply_text}"
-            )
-            return
-
-        try:
-            client = _gmail_client_factory()
-            if inspect.isawaitable(client):
-                client = await client
-            await client.send_reply(
-                to=to_address,
-                subject=conv_doc.get("last_email_subject", "") or "Your support request",
-                body=reply_text,
-                thread_id=conv_doc.get("email_thread_id", ""),
-                in_reply_to=conv_doc.get("last_email_message_id"),
-                references=conv_doc.get("last_email_message_id"),
-            )
-            logger.info(f"📧 Email reply sent to {to_address} | Conv: {conversation_id}")
-        except Exception as e:
-            # Transient Gmail/network errors are expected and varied; log the
-            # full traceback for diagnosis, but do not swallow the failure --
-            # the caller (and eventually the email ingestion pipeline) must
-            # learn the send did not happen so it isn't recorded as replied.
-            logger.error(
-                f"✗ Failed to send email reply | Conv: {conversation_id} | To: {to_address} | {e}",
-                exc_info=True,
-            )
-            raise EmailDeliveryError(
-                f"Failed to send email reply | Conv: {conversation_id} | To: {to_address}"
-            ) from e
 
     @staticmethod
     async def list_conversations(
@@ -374,8 +265,6 @@ class ChatService:
         channel: Optional[str] = None
     ) -> ListConversationsResponse:
         """List all conversations for tenant with pagination"""
-        db = ChatService._get_db()
-
         query = {"tenant_id": tenant_id}
         if status:
             query["status"] = status
@@ -384,12 +273,7 @@ class ChatService:
             # "channel" key -- treat those as "widget" too.
             query["channel"] = {"$in": ["widget", None]} if channel == "widget" else channel
 
-        total = await db["conversations"].count_documents(query)
-        docs = await db["conversations"].find(query) \
-            .sort("created_at", -1) \
-            .skip(offset) \
-            .limit(limit) \
-            .to_list(length=limit)
+        docs, total = await ConversationRepository.list_conversations(query, limit, offset)
 
         conversations = [
             ConversationSummary(
@@ -423,21 +307,11 @@ class ChatService:
         conversation_id: str
     ) -> Optional[GetConversationResponse]:
         """Get full conversation thread"""
-        db = ChatService._get_db()
-
-        # Verify conversation belongs to tenant
-        conv_doc = await db["conversations"].find_one({
-            "conversation_id": conversation_id,
-            "tenant_id": tenant_id
-        })
+        conv_doc = await ConversationRepository.find_conversation_for_tenant(conversation_id, tenant_id)
         if not conv_doc:
             return None  # Will be handled by endpoint as 404
 
-        # Get all messages
-        messages_docs = await db["messages"].find({
-            "conversation_id": conversation_id,
-            "tenant_id": tenant_id
-        }).sort("created_at", 1).to_list(length=None)
+        messages_docs = await ConversationRepository.get_messages(conversation_id, tenant_id)
 
         messages = [
             MessageResponse(
@@ -480,15 +354,7 @@ class ChatService:
         req: ReplyToConversationRequest
     ) -> Optional[ReplyResponse]:
         """Agent sends reply to conversation"""
-        import aiohttp
-
-        db = ChatService._get_db()
-
-        # Verify conversation exists and belongs to tenant
-        conv_doc = await db["conversations"].find_one({
-            "conversation_id": conversation_id,
-            "tenant_id": tenant_id
-        })
+        conv_doc = await ConversationRepository.find_conversation_for_tenant(conversation_id, tenant_id)
         if not conv_doc:
             logger.warning(f"Conversation {conversation_id} not found for tenant {tenant_id}")
             return None
@@ -499,10 +365,10 @@ class ChatService:
         # For ecommerce channel, agent replies should be unread until the client polls.
         # For other channels they are marked read on the assumption that the reply is
         # pushed out from here -- for email that assumption is made true by the
-        # _deliver_reply call below, and if that send fails the message is stamped
-        # delivery_status=failed and the caller gets an error.
+        # ReplyDeliveryService.deliver_reply call below, and if that send fails the
+        # message is stamped delivery_status=failed and the caller gets an error.
         is_read = conv_doc.get("channel") != "ecommerce"
-        await db["messages"].insert_one({
+        await ConversationRepository.insert_message({
             "message_id": message_id,
             "conversation_id": conversation_id,
             "tenant_id": tenant_id,
@@ -517,18 +383,16 @@ class ChatService:
         chat_logger.info(f"👨‍💼 Agent reply saved | Conv: {conversation_id} | Agent: {req.agent_name} | Channel: {channel} | Status: {read_status}")
 
         # Update conversation
-        await db["conversations"].update_one(
-            {"conversation_id": conversation_id},
-            {
-                "$set": {
-                    "updated_at": now,
-                    "last_message_at": now,
-                    "last_message_preview": req.message[:100],
-                    "status": "open",
-                    "handling_mode": "human"
-                },
-                "$inc": {"message_count": 1}
-            }
+        await ConversationRepository.update_conversation(
+            conversation_id,
+            set_fields={
+                "updated_at": now,
+                "last_message_at": now,
+                "last_message_preview": req.message[:100],
+                "status": "open",
+                "handling_mode": "human",
+            },
+            inc_fields={"message_count": 1},
         )
 
         logger.info(f"Agent reply sent to conversation {conversation_id} by tenant {tenant_id}")
@@ -536,23 +400,14 @@ class ChatService:
         # Send webhook to client if webhook_url is registered
         webhook_url = conv_doc.get("webhook_url")
         if webhook_url:
-            try:
-                async with aiohttp.ClientSession() as session:
-                    webhook_payload = {
-                        "conversation_id": conversation_id,
-                        "message_id": message_id,
-                        "sender": "agent",
-                        "content": req.message,
-                        "agent_name": req.agent_name,
-                        "created_at": now.isoformat().replace("+00:00", "Z")
-                    }
-                    async with session.post(webhook_url, json=webhook_payload) as resp:
-                        if resp.status == 200:
-                            logger.info(f"✅ Webhook sent to {webhook_url} for conversation {conversation_id}")
-                        else:
-                            logger.warning(f"⚠️ Webhook failed ({resp.status}) for {webhook_url}: {await resp.text()}")
-            except Exception as e:
-                logger.error(f"❌ Error sending webhook to {webhook_url}: {str(e)}")
+            await ReplyDeliveryService.send_webhook(webhook_url, {
+                "conversation_id": conversation_id,
+                "message_id": message_id,
+                "sender": "agent",
+                "content": req.message,
+                "agent_name": req.agent_name,
+                "created_at": now.isoformat().replace("+00:00", "Z")
+            })
 
         # Actually deliver the reply on channels that need an outbound send.
         # Without this an agent answering an escalated email conversation sees
@@ -560,9 +415,10 @@ class ChatService:
         # conv_doc was read before the insert, so it still carries the inbound
         # last_email_message_id / email_thread_id needed to thread the reply.
         try:
-            await ChatService._deliver_reply(conv_doc, req.message)
+            await ReplyDeliveryService.deliver_reply(conv_doc, req.message)
         except EmailDeliveryError:
-            await ChatService._mark_delivery_failed(message_id)
+            await ConversationRepository.mark_message(message_id, {"delivery_status": "failed"})
+            chat_logger.warning(f"⚠️  Message {message_id} marked delivery_status=failed")
             # Propagate: an agent must not be told their reply was sent when
             # it was not. The message row is kept (stamped as failed) so the
             # text is not lost.
@@ -581,32 +437,13 @@ class ChatService:
         conversation_id: str
     ) -> Optional[Dict[str, Any]]:
         """Mark all messages in conversation as read"""
-        db = ChatService._get_db()
-
-        # Verify conversation and belongs to tenant
-        conv_doc = await db["conversations"].find_one({
-            "conversation_id": conversation_id,
-            "tenant_id": tenant_id
-        })
+        conv_doc = await ConversationRepository.find_conversation_for_tenant(conversation_id, tenant_id)
         if not conv_doc:
             logger.warning(f"Conversation {conversation_id} not found for tenant {tenant_id}")
             return None
 
-        # Mark messages as read
-        await db["messages"].update_many(
-            {
-                "conversation_id": conversation_id,
-                "tenant_id": tenant_id,
-                "sender": "customer"
-            },
-            {"$set": {"read": True}}
-        )
-
-        # Reset unread count
-        await db["conversations"].update_one(
-            {"conversation_id": conversation_id},
-            {"$set": {"unread_count": 0}}
-        )
+        await ConversationRepository.mark_customer_messages_read(conversation_id, tenant_id)
+        await ConversationRepository.update_conversation(conversation_id, set_fields={"unread_count": 0})
 
         logger.info(f"Marked conversation {conversation_id} as read for tenant {tenant_id}")
 
@@ -619,26 +456,17 @@ class ChatService:
         new_status: str
     ) -> Optional[StatusChangeResponse]:
         """Update conversation status"""
-        db = ChatService._get_db()
-
-        # Verify conversation and belongs to tenant
-        conv_doc = await db["conversations"].find_one({
-            "conversation_id": conversation_id,
-            "tenant_id": tenant_id
-        })
+        conv_doc = await ConversationRepository.find_conversation_for_tenant(conversation_id, tenant_id)
         if not conv_doc:
             logger.warning(f"Conversation {conversation_id} not found for tenant {tenant_id}")
             return None
 
-        # Update status
-        await db["conversations"].update_one(
-            {"conversation_id": conversation_id},
-            {
-                "$set": {
-                    "status": new_status,
-                    "updated_at": datetime.now(timezone.utc)
-                }
-            }
+        await ConversationRepository.update_conversation(
+            conversation_id,
+            set_fields={
+                "status": new_status,
+                "updated_at": datetime.now(timezone.utc),
+            },
         )
 
         logger.info(f"Status updated to {new_status} for conversation {conversation_id} by tenant {tenant_id}")
