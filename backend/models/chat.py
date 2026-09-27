@@ -1,17 +1,17 @@
-from pydantic import BaseModel, Field, validator
-from typing import Optional, List
-from datetime import datetime
+
+from pydantic import BaseModel, Field
+
 
 # Request models
 class SendMessageRequest(BaseModel):
     message: str = Field(..., min_length=1, max_length=5000)
-    customer_email: Optional[str] = Field(None, max_length=255)
-    customer_name: Optional[str] = Field(None, max_length=255)
-    webhook_url: Optional[str] = Field(None, description="URL where backend should send agent responses")
+    customer_email: str | None = Field(None, max_length=255)
+    customer_name: str | None = Field(None, max_length=255)
+    webhook_url: str | None = Field(None, description="URL where backend should send agent responses")
 
 class ReplyToConversationRequest(BaseModel):
     message: str = Field(..., min_length=1, max_length=5000)
-    agent_name: Optional[str] = Field("Support Team", max_length=255)
+    agent_name: str | None = Field("Support Team", max_length=255)
 
 # Response models
 class MessageResponse(BaseModel):
@@ -21,17 +21,17 @@ class MessageResponse(BaseModel):
     content: str
     read: bool
     created_at: str
-    token_count: Optional[int] = None
-    duration_ms: Optional[int] = None
+    token_count: int | None = None
+    duration_ms: int | None = None
     # Only ever set to "failed", and only on an outbound reply whose send
     # raised. None means "no outbound send was attempted or it succeeded".
-    delivery_status: Optional[str] = None
+    delivery_status: str | None = None
 
 class ConversationSummary(BaseModel):
     conversation_id: str
-    customer_email: Optional[str]
-    customer_name: Optional[str]
-    customer_identifier: Optional[str] = None
+    customer_email: str | None
+    customer_name: str | None
+    customer_identifier: str | None = None
     status: str  # "open" | "closed" | "waiting_agent_response"
     message_count: int
     unread_count: int
@@ -41,8 +41,8 @@ class ConversationSummary(BaseModel):
 
 class ConversationDetailResponse(BaseModel):
     conversation_id: str
-    customer_email: Optional[str]
-    customer_name: Optional[str]
+    customer_email: str | None
+    customer_name: str | None
     status: str
     message_count: int
     unread_count: int
@@ -54,11 +54,11 @@ class SendMessageResponse(BaseModel):
     conversation_id: str
     message_id: str
     created_at: str
-    ai_answer: Optional[str] = None
+    ai_answer: str | None = None
 
 class ListConversationsResponse(BaseModel):
     success: bool
-    conversations: List[ConversationSummary]
+    conversations: list[ConversationSummary]
     total: int
     limit: int
     offset: int
@@ -66,7 +66,7 @@ class ListConversationsResponse(BaseModel):
 class GetConversationResponse(BaseModel):
     success: bool
     conversation: ConversationDetailResponse
-    messages: List[MessageResponse]
+    messages: list[MessageResponse]
 
 class ReplyResponse(BaseModel):
     success: bool

@@ -3,6 +3,7 @@ FastAPI application factory - AI customer support engine (chat + knowledge base)
 """
 import logging
 import uuid
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -11,10 +12,14 @@ from fastapi.responses import JSONResponse
 from config import get_settings
 from database import Database
 from middleware import APIKeyAuthMiddleware, RateLimitMiddleware
-from routers import health, chat, knowledge_base
+from routers import chat, health, knowledge_base
 from routers.ecommerce_chat import router as ecommerce_chat_router
-from utils.logging_setup import setup_logging, setup_chat_logger, setup_ai_logger, print_log_info
-from contextlib import asynccontextmanager
+from utils.logging_setup import (
+    print_log_info,
+    setup_ai_logger,
+    setup_chat_logger,
+    setup_logging,
+)
 
 # Configure comprehensive logging
 logger = setup_logging("main")

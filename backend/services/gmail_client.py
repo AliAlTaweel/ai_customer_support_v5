@@ -6,10 +6,8 @@ is blocking, so every API call is pushed to a worker thread.
 import asyncio
 import base64
 from email.message import EmailMessage
-from typing import Optional
 
 from config import get_settings
-from utils.logger import logger
 
 GMAIL_SCOPES = [
     "https://www.googleapis.com/auth/gmail.modify",  # read + mark as read
@@ -24,8 +22,8 @@ def build_reply_mime(
     from_address: str,
     subject: str,
     body: str,
-    in_reply_to: Optional[str],
-    references: Optional[str],
+    in_reply_to: str | None,
+    references: str | None,
 ) -> str:
     """Build a base64url-encoded reply that threads correctly in the client."""
     message = EmailMessage()
@@ -118,8 +116,8 @@ class GmailClient:
         subject: str,
         body: str,
         thread_id: str,
-        in_reply_to: Optional[str],
-        references: Optional[str],
+        in_reply_to: str | None,
+        references: str | None,
     ) -> str:
         raw = build_reply_mime(
             to=to,
@@ -157,8 +155,8 @@ class GmailClient:
         await asyncio.to_thread(_call)
 
 
-_client: Optional[GmailClient] = None
-_lock: Optional[asyncio.Lock] = None
+_client: GmailClient | None = None
+_lock: asyncio.Lock | None = None
 _lock_loop = None
 
 

@@ -1,6 +1,6 @@
 """Datetime formatting helpers."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 
 def to_utc_iso_z(dt: datetime) -> str:
@@ -12,7 +12,7 @@ def to_utc_iso_z(dt: datetime) -> str:
     the datetime read back is naive or already tz-aware.
     """
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
+        dt = dt.replace(tzinfo=UTC)
     else:
-        dt = dt.astimezone(timezone.utc)
+        dt = dt.astimezone(UTC)
     return dt.isoformat().replace("+00:00", "Z")

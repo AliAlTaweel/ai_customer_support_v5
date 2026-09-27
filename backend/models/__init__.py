@@ -1,40 +1,42 @@
 """Models package re-exports from chat.py and base models"""
 from datetime import datetime
-from typing import Optional, Literal
+from typing import Literal, Optional
+
 from pydantic import BaseModel
 
 from .chat import (
-    SendMessageRequest,
-    ReplyToConversationRequest,
-    MessageResponse,
-    ConversationSummary,
     ConversationDetailResponse,
-    SendMessageResponse,
-    ListConversationsResponse,
-    GetConversationResponse,
-    ReplyResponse,
-    StatusChangeResponse,
+    ConversationSummary,
     ErrorResponse,
+    GetConversationResponse,
+    ListConversationsResponse,
+    MessageResponse,
+    ReplyResponse,
+    ReplyToConversationRequest,
+    SendMessageRequest,
+    SendMessageResponse,
+    StatusChangeResponse,
 )
+
 
 # Base models needed by routers
 class HealthResponse(BaseModel):
     """Health check response"""
     status: Literal["ok", "error"]
     timestamp: datetime
-    message: Optional[str] = None
+    message: str | None = None
 
 __all__ = [
-    "HealthResponse",
-    "SendMessageRequest",
-    "ReplyToConversationRequest",
-    "MessageResponse",
-    "ConversationSummary",
     "ConversationDetailResponse",
-    "SendMessageResponse",
-    "ListConversationsResponse",
-    "GetConversationResponse",
-    "ReplyResponse",
-    "StatusChangeResponse",
+    "ConversationSummary",
     "ErrorResponse",
+    "GetConversationResponse",
+    "HealthResponse",
+    "ListConversationsResponse",
+    "MessageResponse",
+    "ReplyResponse",
+    "ReplyToConversationRequest",
+    "SendMessageRequest",
+    "SendMessageResponse",
+    "StatusChangeResponse",
 ]

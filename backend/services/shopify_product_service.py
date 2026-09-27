@@ -2,10 +2,11 @@
 isn't customer-specific. Never extend this to return customer- or order-specific data."""
 
 from cryptography.fernet import InvalidToken
+
 from repositories.mongo_client import MongoConnection
-from services.shopify_admin_client import ShopifyAdminClient, ShopifyAdminAPIError
-from utils.shopify_crypto import decrypt_shopify_token
+from services.shopify_admin_client import ShopifyAdminAPIError, ShopifyAdminClient
 from utils.logger import logger
+from utils.shopify_crypto import decrypt_shopify_token
 
 # Characters with special meaning in Shopify's search DSL (wildcards, field
 # prefixes, quoting) are stripped from free-text product queries so a crafted

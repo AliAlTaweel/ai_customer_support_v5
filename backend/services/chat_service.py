@@ -2,22 +2,28 @@
 ConversationRepository, outbound dispatch in ReplyDeliveryService -- this
 module decides *what* should happen and in what order."""
 
-from datetime import datetime, timezone
 import uuid
-from typing import Optional, List, Dict, Any
+from datetime import UTC, datetime
+from typing import Any
+
 from models.chat import (
-    SendMessageRequest, ReplyToConversationRequest,
-    SendMessageResponse, ListConversationsResponse,
-    ConversationSummary, GetConversationResponse,
-    ConversationDetailResponse, MessageResponse, ReplyResponse,
-    StatusChangeResponse
+    ConversationDetailResponse,
+    ConversationSummary,
+    GetConversationResponse,
+    ListConversationsResponse,
+    MessageResponse,
+    ReplyResponse,
+    ReplyToConversationRequest,
+    SendMessageRequest,
+    SendMessageResponse,
+    StatusChangeResponse,
 )
 from repositories.conversation_repository import ConversationRepository
-from utils.logger import logger
-from utils.logging_setup import setup_chat_logger, setup_ai_logger
-from services.tenant_settings_service import TenantSettingsService
 from services.ai_reply_service import AIReplyService
 from services.reply_delivery_service import EmailDeliveryError, ReplyDeliveryService
+from services.tenant_settings_service import TenantSettingsService
+from utils.logger import logger
+from utils.logging_setup import setup_ai_logger, setup_chat_logger
 
 __all__ = ["ChatService", "EmailDeliveryError"]
 
@@ -33,13 +39,13 @@ class ChatService:
     async def receive_message(
         tenant_id: str,
         channel: str,
-        customer_identifier: Optional[str],
+        customer_identifier: str | None,
         message: str,
-        customer_name: Optional[str] = None,
-        webhook_url: Optional[str] = None,
-        email_thread_id: Optional[str] = None,
-        email_headers: Optional[Dict[str, str]] = None,
-        whatsapp_message_id: Optional[str] = None,
+        customer_name: str | None = None,
+        webhook_url: str | None = None,
+        email_thread_id: str | None = None,
+        email_headers: dict[str, str] | None = None,
+        whatsapp_message_id: str | None = None,
     ) -> SendMessageResponse:
         """Ingest a customer message from any channel (widget, email, whatsapp),
         creating or reusing a conversation, then triggering an AI reply."""
@@ -64,7 +70,7 @@ class ChatService:
                 conversation_id = existing["conversation_id"]
                 logger.info(f"   Found existing {channel} conversation: {conversation_id}")
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         if not conversation_id:
             conversation_id = f"conv_{uuid.uuid4().hex[:24]}"
@@ -167,7 +173,7 @@ class ChatService:
         )
 
     @staticmethod
-    async def _maybe_generate_ai_reply(tenant_id: str, conversation_id: str, customer_message: str) -> Optional[str]:
+    async def _maybe_generate_ai_reply(tenant_id: str, conversation_id: str, customer_message: str) -> str | None:
         """If the conversation is still AI-handled and the tenant has AI enabled with
         either knowledge base content or a live Shopify/ecommerce connection, generate
         an AI reply or escalate to a human. On success, dispatch the reply to the
@@ -205,7 +211,7 @@ class ChatService:
         result = await AIReplyService.generate_reply(
             tenant_id, prompt_message, customer_identifier=conv_doc.get("customer_identifier")
         )
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         if result.answered:
             ai_message_id = f"msg_{uuid.uuid4().hex[:12]}"
@@ -261,8 +267,8 @@ class ChatService:
         tenant_id: str,
         limit: int = 20,
         offset: int = 0,
-        status: Optional[str] = None,
-        channel: Optional[str] = None
+        status: str | None = None,
+        channel: str | None = None
     ) -> ListConversationsResponse:
         """List all conversations for tenant with pagination"""
         query = {"tenant_id": tenant_id}
@@ -305,7 +311,7 @@ class ChatService:
     async def get_conversation(
         tenant_id: str,
         conversation_id: str
-    ) -> Optional[GetConversationResponse]:
+    ) -> GetConversationResponse | None:
         """Get full conversation thread"""
         conv_doc = await ConversationRepository.find_conversation_for_tenant(conversation_id, tenant_id)
         if not conv_doc:
@@ -352,7 +358,7 @@ class ChatService:
         tenant_id: str,
         conversation_id: str,
         req: ReplyToConversationRequest
-    ) -> Optional[ReplyResponse]:
+    ) -> ReplyResponse | None:
         """Agent sends reply to conversation"""
         conv_doc = await ConversationRepository.find_conversation_for_tenant(conversation_id, tenant_id)
         if not conv_doc:
@@ -361,7 +367,7 @@ class ChatService:
 
         # Create message
         message_id = f"msg_{uuid.uuid4().hex[:12]}"
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         # For ecommerce channel, agent replies should be unread until the client polls.
         # For other channels they are marked read on the assumption that the reply is
         # pushed out from here -- for email that assumption is made true by the
@@ -435,7 +441,7 @@ class ChatService:
     async def mark_as_read(
         tenant_id: str,
         conversation_id: str
-    ) -> Optional[Dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """Mark all messages in conversation as read"""
         conv_doc = await ConversationRepository.find_conversation_for_tenant(conversation_id, tenant_id)
         if not conv_doc:
@@ -454,7 +460,7 @@ class ChatService:
         tenant_id: str,
         conversation_id: str,
         new_status: str
-    ) -> Optional[StatusChangeResponse]:
+    ) -> StatusChangeResponse | None:
         """Update conversation status"""
         conv_doc = await ConversationRepository.find_conversation_for_tenant(conversation_id, tenant_id)
         if not conv_doc:
@@ -465,7 +471,7 @@ class ChatService:
             conversation_id,
             set_fields={
                 "status": new_status,
-                "updated_at": datetime.now(timezone.utc),
+                "updated_at": datetime.now(UTC),
             },
         )
 

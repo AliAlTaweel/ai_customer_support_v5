@@ -1,10 +1,8 @@
 """Centralized logging setup for backend services."""
 
-import os
 import logging
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
-from datetime import datetime
 
 # Create logs directory if it doesn't exist
 LOGS_DIR = Path(__file__).parent.parent / "logs"

@@ -3,7 +3,7 @@
 callers are responsible for recording the outcome (e.g. delivery_status)."""
 
 import inspect
-from typing import Any, Dict, Optional
+from typing import Any
 
 from utils.logger import logger
 
@@ -28,7 +28,7 @@ class ReplyDeliveryService:
     """Outbound dispatch of a reply to a conversation's channel."""
 
     @staticmethod
-    async def deliver_reply(conv_doc: Dict[str, Any], reply_text: str) -> None:
+    async def deliver_reply(conv_doc: dict[str, Any], reply_text: str) -> None:
         """Dispatch an AI/agent reply to the conversation's channel.
 
         Widget and ecommerce replies are retrieved by the frontend via polling
@@ -96,7 +96,7 @@ class ReplyDeliveryService:
             ) from e
 
     @staticmethod
-    async def send_webhook(webhook_url: str, payload: Dict[str, Any]) -> None:
+    async def send_webhook(webhook_url: str, payload: dict[str, Any]) -> None:
         """Notify a tenant-registered webhook of an agent reply. Best-effort:
         failures are logged, not raised -- a broken client webhook must not
         block the reply itself."""
@@ -112,4 +112,4 @@ class ReplyDeliveryService:
                             f"⚠️ Webhook failed ({resp.status}) for {webhook_url}: {await resp.text()}"
                         )
         except Exception as e:
-            logger.error(f"❌ Error sending webhook to {webhook_url}: {str(e)}")
+            logger.error(f"❌ Error sending webhook to {webhook_url}: {e!s}")

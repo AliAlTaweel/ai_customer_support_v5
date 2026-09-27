@@ -1,7 +1,6 @@
 """In-memory test doubles for the email channel."""
 import base64
-from datetime import datetime, timezone
-from typing import Any, Optional
+from datetime import UTC, datetime
 
 
 def encode_body(text: str) -> str:
@@ -15,7 +14,7 @@ def gmail_message(
     from_address: str = "customer@example.com",
     subject: str = "Where is my order?",
     body: str = "Hi, where is order #4521?",
-    extra_headers: Optional[dict] = None,
+    extra_headers: dict | None = None,
 ) -> dict:
     """Build a Gmail users.messages.get payload with a text/plain body."""
     headers = {
@@ -39,7 +38,7 @@ def gmail_message(
 class FakeGmailClient:
     """Records sends instead of contacting Gmail."""
 
-    def __init__(self, messages: Optional[list[dict]] = None):
+    def __init__(self, messages: list[dict] | None = None):
         self._messages = {m["id"]: m for m in (messages or [])}
         self.sent: list[dict] = []
         self.marked_read: list[str] = []
@@ -52,7 +51,7 @@ class FakeGmailClient:
 
     async def send_reply(
         self, to: str, subject: str, body: str, thread_id: str,
-        in_reply_to: Optional[str], references: Optional[str],
+        in_reply_to: str | None, references: str | None,
     ) -> str:
         self.sent.append({
             "to": to, "subject": subject, "body": body,
@@ -85,14 +84,14 @@ class InMemoryProcessedEmailStore:
             "status": "processing",
             "conversation_id": None,
             "skip_reason": None,
-            "processed_at": datetime.now(timezone.utc),
+            "processed_at": datetime.now(UTC),
         }
         return True
 
     async def mark(
         self, gmail_message_id: str, status: str,
-        conversation_id: Optional[str] = None,
-        skip_reason: Optional[str] = None,
+        conversation_id: str | None = None,
+        skip_reason: str | None = None,
     ) -> None:
         record = self.records[gmail_message_id]
         record["status"] = status

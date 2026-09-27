@@ -11,7 +11,6 @@ Usage:
 """
 import argparse
 import asyncio
-from typing import Optional
 
 from config import get_settings
 from database import Database
@@ -108,7 +107,7 @@ async def _run(args) -> int:
         await Database.disconnect()
 
 
-def main(argv: Optional[list] = None) -> int:
+def main(argv: list | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
         return asyncio.run(_run(args))

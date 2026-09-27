@@ -1,7 +1,8 @@
 """Shared HTTP client for the ecommerce_shop_01 demo shop's external data API."""
 
-import asyncio
+
 import aiohttp
+
 from utils.logger import logger
 
 REQUEST_TIMEOUT_SECONDS = 10
@@ -27,6 +28,6 @@ class EcommerceShopClient:
                         logger.error(f"Ecommerce shop API returned {resp.status} for {url}: {body}")
                         raise EcommerceShopAPIError(f"Ecommerce shop API returned status {resp.status}")
                     return await resp.json()
-        except (asyncio.TimeoutError, aiohttp.ClientError) as e:
+        except (TimeoutError, aiohttp.ClientError) as e:
             logger.error(f"Ecommerce shop API request failed for {url}: {e}")
             raise EcommerceShopAPIError(f"Ecommerce shop API request failed: {e}") from e

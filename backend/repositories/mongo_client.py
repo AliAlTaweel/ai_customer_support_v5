@@ -1,7 +1,9 @@
 """MongoDB connection pooling and client management."""
 
 from typing import Optional
+
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
+
 from utils.logger import logger
 
 
@@ -9,8 +11,8 @@ class MongoConnection:
     """Manages MongoDB connection pooling and client lifecycle."""
 
     _instance: Optional['MongoConnection'] = None
-    _client: Optional[AsyncIOMotorClient] = None
-    _database: Optional[AsyncIOMotorDatabase] = None
+    _client: AsyncIOMotorClient | None = None
+    _database: AsyncIOMotorDatabase | None = None
 
     def __new__(cls) -> 'MongoConnection':
         """Singleton pattern - ensures only one connection instance."""

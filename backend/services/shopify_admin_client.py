@@ -1,7 +1,8 @@
 """Shared HTTP client for Shopify's Admin GraphQL API."""
 
-import asyncio
+
 import aiohttp
+
 from utils.logger import logger
 
 ADMIN_API_VERSION = "2024-01"
@@ -38,6 +39,6 @@ class ShopifyAdminClient:
                         raise ShopifyAdminAPIError(f"Shopify Admin API GraphQL errors: {body['errors']}")
 
                     return body["data"]
-        except (asyncio.TimeoutError, aiohttp.ClientError) as e:
+        except (TimeoutError, aiohttp.ClientError) as e:
             logger.error(f"Shopify Admin API request failed for {shop_domain}: {e}")
             raise ShopifyAdminAPIError(f"Shopify Admin API request failed: {e}") from e

@@ -1,9 +1,11 @@
 """Health check and root endpoints for the API."""
 
-from fastapi import APIRouter
 from datetime import datetime
-from models import HealthResponse
+
+from fastapi import APIRouter
+
 from config import get_settings
+from models import HealthResponse
 
 # Create router
 router = APIRouter()

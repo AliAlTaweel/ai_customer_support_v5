@@ -2,9 +2,9 @@ import pytest
 
 import services.reply_delivery_service as reply_delivery_module
 from models.chat import ReplyToConversationRequest
+from services.ai_reply_service import AIReplyResult, AIReplyService
 from services.chat_service import ChatService, EmailDeliveryError
 from services.reply_delivery_service import ReplyDeliveryService
-from services.ai_reply_service import AIReplyResult, AIReplyService
 from services.tenant_settings_service import TenantSettingsService
 from tests.fakes import FakeGmailClient
 

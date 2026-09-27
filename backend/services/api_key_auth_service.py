@@ -5,8 +5,7 @@ relay router (which verifies its own bearer token because the middleware
 skips /api/ecommerce paths) so the two do not drift out of sync.
 """
 import logging
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import UTC, datetime
 
 import bcrypt
 
@@ -20,7 +19,7 @@ class APIKeyAuthService:
     with a fallback to the legacy plaintext key stored on the tenant record."""
 
     @staticmethod
-    async def authenticate(api_key: str) -> Optional[str]:
+    async def authenticate(api_key: str) -> str | None:
         """Return the tenant_id the key belongs to, or None if invalid."""
         db = MongoConnection.get_database()
         tenant_id = None
@@ -41,7 +40,7 @@ class APIKeyAuthService:
                 if bcrypt.checkpw(api_key_bytes, stored_hash):
                     await db["tenant_api_keys"].update_one(
                         {"_id": api_key_doc["_id"]},
-                        {"$set": {"last_used_at": datetime.now(timezone.utc)}}
+                        {"$set": {"last_used_at": datetime.now(UTC)}}
                     )
                     tenant_id = api_key_doc["tenant_id"]
                     api_key_preview = f"{api_key[:12]}...{api_key[-4:]}"

@@ -1,11 +1,19 @@
 """Knowledge base API endpoints: PDF documents, Q&A pairs, AI settings."""
 
 import logging
-from fastapi import APIRouter, Request, HTTPException, UploadFile, File
+
+from fastapi import APIRouter, File, HTTPException, Request, UploadFile
+
 from models.knowledge_base import (
-    UploadDocumentResponse, ListDocumentsResponse, DocumentSummary,
-    QAPairCreate, QAPairUpdate, QAPairResponse, ListQAPairsResponse,
-    AISettingsRequest, AISettingsResponse,
+    AISettingsRequest,
+    AISettingsResponse,
+    DocumentSummary,
+    ListDocumentsResponse,
+    ListQAPairsResponse,
+    QAPairCreate,
+    QAPairResponse,
+    QAPairUpdate,
+    UploadDocumentResponse,
 )
 from services.kb_document_service import KBDocumentService
 from services.kb_qa_service import KBQAService

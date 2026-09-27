@@ -154,7 +154,7 @@ def test_every_skip_reason_is_classified_exactly_once():
         if not name.startswith("_") and isinstance(value, str)
     }
 
-    assert PERMANENT_SKIP_REASONS | DEFERRABLE_SKIP_REASONS == all_reasons
+    assert all_reasons == PERMANENT_SKIP_REASONS | DEFERRABLE_SKIP_REASONS
     assert not (PERMANENT_SKIP_REASONS & DEFERRABLE_SKIP_REASONS)
 
 

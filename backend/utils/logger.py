@@ -2,14 +2,11 @@
 
 import logging
 import sys
-from typing import Optional
 from contextvars import ContextVar
-from datetime import datetime
-
 
 # Context variables for tracking
 request_id_context: ContextVar[str] = ContextVar("request_id", default="unknown")
-user_context: ContextVar[Optional[str]] = ContextVar("user", default=None)
+user_context: ContextVar[str | None] = ContextVar("user", default=None)
 
 
 class ContextFilter(logging.Filter):
@@ -68,7 +65,7 @@ def set_request_id(request_id: str) -> None:
     request_id_context.set(request_id)
 
 
-def set_user(user: Optional[str]) -> None:
+def set_user(user: str | None) -> None:
     """Set the user for the current context."""
     user_context.set(user)
 
@@ -78,6 +75,6 @@ def get_request_id() -> str:
     return request_id_context.get()
 
 
-def get_user() -> Optional[str]:
+def get_user() -> str | None:
     """Get the current user."""
     return user_context.get()

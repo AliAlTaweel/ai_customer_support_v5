@@ -8,7 +8,7 @@ customer_identifier for any other channel.
 """
 
 from config import get_settings
-from services.ecommerce_shop_client import EcommerceShopClient, EcommerceShopAPIError
+from services.ecommerce_shop_client import EcommerceShopAPIError, EcommerceShopClient
 from utils.logger import logger
 
 

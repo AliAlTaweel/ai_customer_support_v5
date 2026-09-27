@@ -1,12 +1,13 @@
 """Live order-status lookups from Shopify, gated behind order-number + email verification."""
 
 import re
-from typing import Optional
+
 from cryptography.fernet import InvalidToken
+
 from repositories.mongo_client import MongoConnection
-from services.shopify_admin_client import ShopifyAdminClient, ShopifyAdminAPIError
-from utils.shopify_crypto import decrypt_shopify_token
+from services.shopify_admin_client import ShopifyAdminAPIError, ShopifyAdminClient
 from utils.logger import logger
+from utils.shopify_crypto import decrypt_shopify_token
 
 ORDER_NUMBER_PATTERN = re.compile(r"^#?\d+$")
 
@@ -74,7 +75,7 @@ class ShopifyOrderService:
         if order_email.strip().lower() != email.strip().lower():
             return {"verified": False}
 
-        tracking_url: Optional[str] = None
+        tracking_url: str | None = None
         fulfillments = order.get("fulfillments") or []
         if fulfillments:
             tracking_info = fulfillments[0].get("trackingInfo") or []

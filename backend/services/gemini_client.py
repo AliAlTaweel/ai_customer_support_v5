@@ -1,8 +1,10 @@
 """Thin async wrapper around the google-genai SDK for reply generation and embeddings."""
 
 import asyncio
+
 from google import genai
 from google.genai import types
+
 from config import get_settings
 
 

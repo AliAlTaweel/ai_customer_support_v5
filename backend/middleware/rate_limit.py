@@ -1,11 +1,12 @@
 """
 Rate limiting middleware - prevents API abuse by limiting requests per API key
 """
-from fastapi import Request, HTTPException
+import logging
+from datetime import UTC, datetime
+
+from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
-from datetime import datetime, timezone
-import logging
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +30,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         api_key_id = request.state.api_key_id
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         # Initialize or check rate limit
         if api_key_id not in rate_limit_store:

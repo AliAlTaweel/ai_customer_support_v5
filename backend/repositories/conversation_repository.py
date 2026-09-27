@@ -1,7 +1,7 @@
 """Mongo access for conversations and their messages. No business logic --
 callers decide what to query for and what the results mean."""
 
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from repositories.mongo_client import MongoConnection
 
@@ -14,12 +14,12 @@ class ConversationRepository:
         return MongoConnection.get_database()
 
     @staticmethod
-    async def find_conversation(query: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    async def find_conversation(query: dict[str, Any]) -> dict[str, Any] | None:
         db = ConversationRepository._get_db()
         return await db["conversations"].find_one(query)
 
     @staticmethod
-    async def insert_conversation(doc: Dict[str, Any]) -> str:
+    async def insert_conversation(doc: dict[str, Any]) -> str:
         db = ConversationRepository._get_db()
         result = await db["conversations"].insert_one(doc)
         return str(result.inserted_id)
@@ -27,10 +27,10 @@ class ConversationRepository:
     @staticmethod
     async def update_conversation(
         conversation_id: str,
-        set_fields: Optional[Dict[str, Any]] = None,
-        inc_fields: Optional[Dict[str, Any]] = None,
+        set_fields: dict[str, Any] | None = None,
+        inc_fields: dict[str, Any] | None = None,
     ) -> None:
-        update: Dict[str, Any] = {}
+        update: dict[str, Any] = {}
         if set_fields:
             update["$set"] = set_fields
         if inc_fields:
@@ -41,28 +41,28 @@ class ConversationRepository:
         await db["conversations"].update_one({"conversation_id": conversation_id}, update)
 
     @staticmethod
-    async def insert_message(doc: Dict[str, Any]) -> str:
+    async def insert_message(doc: dict[str, Any]) -> str:
         db = ConversationRepository._get_db()
         result = await db["messages"].insert_one(doc)
         return str(result.inserted_id)
 
     @staticmethod
-    async def mark_message(message_id: str, set_fields: Dict[str, Any]) -> None:
+    async def mark_message(message_id: str, set_fields: dict[str, Any]) -> None:
         db = ConversationRepository._get_db()
         await db["messages"].update_one({"message_id": message_id}, {"$set": set_fields})
 
     @staticmethod
     async def find_conversation_for_tenant(
         conversation_id: str, tenant_id: str
-    ) -> Optional[Dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         return await ConversationRepository.find_conversation(
             {"conversation_id": conversation_id, "tenant_id": tenant_id}
         )
 
     @staticmethod
     async def list_conversations(
-        query: Dict[str, Any], limit: int, offset: int
-    ) -> Tuple[List[Dict[str, Any]], int]:
+        query: dict[str, Any], limit: int, offset: int
+    ) -> tuple[list[dict[str, Any]], int]:
         db = ConversationRepository._get_db()
         total = await db["conversations"].count_documents(query)
         docs = await db["conversations"].find(query) \
@@ -73,7 +73,7 @@ class ConversationRepository:
         return docs, total
 
     @staticmethod
-    async def get_messages(conversation_id: str, tenant_id: str) -> List[Dict[str, Any]]:
+    async def get_messages(conversation_id: str, tenant_id: str) -> list[dict[str, Any]]:
         db = ConversationRepository._get_db()
         return await db["messages"].find({
             "conversation_id": conversation_id,
@@ -95,7 +95,7 @@ class ConversationRepository:
     @staticmethod
     async def get_unread_outbound_messages(
         conversation_id: str, tenant_id: str
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Agent/AI messages not yet delivered to the customer's own client
         (used by channels, like ecommerce, where the customer polls for replies)."""
         db = ConversationRepository._get_db()
