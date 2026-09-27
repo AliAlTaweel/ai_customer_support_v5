@@ -1,0 +1,13 @@
+# Development and CI toolchain. Runtime deps live in requirements.txt --
+# the container image installs only that file, so the production image
+# never ships the test or lint tooling.
+-r requirements.txt
+
+# Testing
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+
+# Code Quality
+black>=23.0.0
+ruff>=0.1.0
+mypy>=1.7.0

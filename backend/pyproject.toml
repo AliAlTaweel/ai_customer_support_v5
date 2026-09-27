@@ -1,0 +1,31 @@
+[project]
+name = "ai-customer-support-backend"
+version = "0.1.0"
+# Pinned so ruff's UP autofixes never rewrite code into syntax newer than
+# what CI and the container image actually run.
+requires-python = ">=3.12"
+
+[tool.ruff]
+target-version = "py312"
+exclude = ["venv", ".venv", "__pycache__", "logs"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+# E501 (line-too-long) fires 175 times and is not auto-fixable; line length
+# is a formatter's job. Revisit if black is ever promoted to a gate.
+# S/BLE/DTZ are deliberately unselected -- see the design doc: BLE001 would
+# contradict the exception-handling rule in CLAUDE.md.
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true
+explicit_package_bases = true
+mypy_path = "."
+exclude = ["venv/", "logs/"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+pythonpath = "."
+testpaths = ["tests"]
