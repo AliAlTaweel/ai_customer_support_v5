@@ -108,3 +108,17 @@ Each item is tagged:
   only catch "did I call this." This is a style choice with real tradeoffs
   (some teams reasonably prefer mocks for isolation) — it fits this
   codebase's async/Mongo shape, not a universal law.
+
+## Toolchain
+
+- **Python 3.12.** Create the venv with `python3.12 -m venv venv` explicitly —
+  not `python3`, which may point at a newer interpreter. CI and the container
+  image both pin 3.12 (`pyproject.toml`, `Dockerfile`), and a local venv on a
+  different version means CI can fail on code that passed locally.
+- Install with `pip install -r requirements-dev.txt`. `requirements.txt` is
+  runtime-only: it is what the container image installs.
+- Lint and test config is pinned in `pyproject.toml`. `ruff check .` and
+  `pytest -q` gate CI; `black --check .` and `mypy .` are advisory today.
+- **Run `pytest` from `backend/`**, not the repo root: `pythonpath` and
+  `testpaths` resolve against pytest's rootdir, and running from the root
+  produces collection errors rather than a clean suite.

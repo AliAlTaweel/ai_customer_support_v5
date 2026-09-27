@@ -3,9 +3,11 @@ API Key authentication middleware - validates a tenant API key and injects
 tenant_id into request state.
 """
 import logging
+
 from fastapi import Request
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
+
 from services.api_key_auth_service import APIKeyAuthService
 
 logger = logging.getLogger(__name__)

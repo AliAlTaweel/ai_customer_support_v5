@@ -1,11 +1,17 @@
 """Chat API endpoints for customer support conversations."""
 
 import logging
-from fastapi import APIRouter, Request, HTTPException
+
+from fastapi import APIRouter, HTTPException, Request
+
 from models.chat import (
-    SendMessageRequest, ReplyToConversationRequest,
-    SendMessageResponse, ListConversationsResponse,
-    GetConversationResponse, ReplyResponse, StatusChangeResponse
+    GetConversationResponse,
+    ListConversationsResponse,
+    ReplyResponse,
+    ReplyToConversationRequest,
+    SendMessageRequest,
+    SendMessageResponse,
+    StatusChangeResponse,
 )
 from services.chat_service import ChatService, EmailDeliveryError
 
@@ -25,11 +31,11 @@ async def send_message(request: Request, req: SendMessageRequest):
         logger.info(f"✅ Message saved - ConvID: {response.conversation_id}, MsgID: {response.message_id}")
         return response
     except Exception as e:
-        logger.error(f"❌ Error sending message: {str(e)}")
+        logger.error(f"❌ Error sending message: {e!s}")
         raise HTTPException(
             status_code=500,
-            detail=f"Error sending message: {str(e)}"
-        )
+            detail=f"Error sending message: {e!s}"
+        ) from e
 
 
 @router.get("/conversations", response_model=ListConversationsResponse)
@@ -37,8 +43,8 @@ async def list_conversations(
     request: Request,
     limit: int = 20,
     offset: int = 0,
-    status: str = None,
-    channel: str = None
+    status: str | None = None,
+    channel: str | None = None
 ):
     """List all conversations for tenant, optionally filtered by channel"""
     try:
@@ -58,13 +64,13 @@ async def list_conversations(
         )
         return response
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
-        logger.error(f"Error listing conversations: {str(e)}")
+        logger.error(f"Error listing conversations: {e!s}")
         raise HTTPException(
             status_code=500,
-            detail=f"Error listing conversations: {str(e)}"
-        )
+            detail=f"Error listing conversations: {e!s}"
+        ) from e
 
 
 @router.get("/conversations/{conversation_id}", response_model=GetConversationResponse)
@@ -82,11 +88,11 @@ async def get_conversation(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error retrieving conversation: {str(e)}")
+        logger.error(f"Error retrieving conversation: {e!s}")
         raise HTTPException(
             status_code=500,
-            detail=f"Error retrieving conversation: {str(e)}"
-        )
+            detail=f"Error retrieving conversation: {e!s}"
+        ) from e
 
 
 @router.post("/conversations/{conversation_id}/reply", response_model=ReplyResponse)
@@ -113,17 +119,17 @@ async def reply_to_conversation(
         # reached the customer. 502 rather than 500: the failure is in the
         # upstream mail provider, and the agent must see it as a failed send
         # instead of a silent success.
-        logger.error(f"Agent reply saved but email delivery failed: {str(e)}")
+        logger.error(f"Agent reply saved but email delivery failed: {e!s}")
         raise HTTPException(
             status_code=502,
             detail="Reply saved but the email could not be sent. Please retry.",
-        )
+        ) from e
     except Exception as e:
-        logger.error(f"Error sending reply: {str(e)}")
+        logger.error(f"Error sending reply: {e!s}")
         raise HTTPException(
             status_code=500,
-            detail=f"Error sending reply: {str(e)}"
-        )
+            detail=f"Error sending reply: {e!s}"
+        ) from e
 
 
 @router.patch("/conversations/{conversation_id}/read")
@@ -138,11 +144,11 @@ async def mark_as_read(request: Request, conversation_id: str):
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error marking as read: {str(e)}")
+        logger.error(f"Error marking as read: {e!s}")
         raise HTTPException(
             status_code=500,
-            detail=f"Error marking as read: {str(e)}"
-        )
+            detail=f"Error marking as read: {e!s}"
+        ) from e
 
 
 @router.patch("/conversations/{conversation_id}/close", response_model=StatusChangeResponse)
@@ -161,11 +167,11 @@ async def close_conversation(request: Request, conversation_id: str):
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error closing conversation: {str(e)}")
+        logger.error(f"Error closing conversation: {e!s}")
         raise HTTPException(
             status_code=500,
-            detail=f"Error closing conversation: {str(e)}"
-        )
+            detail=f"Error closing conversation: {e!s}"
+        ) from e
 
 
 @router.patch("/conversations/{conversation_id}/reopen", response_model=StatusChangeResponse)
@@ -184,8 +190,8 @@ async def reopen_conversation(request: Request, conversation_id: str):
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error reopening conversation: {str(e)}")
+        logger.error(f"Error reopening conversation: {e!s}")
         raise HTTPException(
             status_code=500,
-            detail=f"Error reopening conversation: {str(e)}"
-        )
+            detail=f"Error reopening conversation: {e!s}"
+        ) from e

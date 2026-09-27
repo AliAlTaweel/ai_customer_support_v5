@@ -4,6 +4,7 @@ Configuration management for the AI customer support backend
 import os
 from functools import lru_cache
 from typing import Literal
+
 from dotenv import load_dotenv
 
 # Load .env file
@@ -112,7 +113,7 @@ class Settings:
     # Logging
     LOG_LEVEL: str = os.getenv("LOG_LEVEL", "DEBUG" if DEBUG else "INFO")
 
-@lru_cache()
+@lru_cache
 def get_settings() -> Settings:
     """Get application settings (cached)"""
     return Settings()

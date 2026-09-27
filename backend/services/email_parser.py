@@ -8,7 +8,6 @@ import re
 from dataclasses import dataclass, field
 from email.utils import parseaddr
 from html import unescape
-from typing import Optional
 
 MAX_BODY_CHARS = 5000
 
@@ -27,11 +26,11 @@ class ParsedEmail:
     gmail_message_id: str
     gmail_thread_id: str
     from_address: str
-    from_name: Optional[str]
+    from_name: str | None
     subject: str
     body: str
-    message_id_header: Optional[str]
-    references: Optional[str]
+    message_id_header: str | None
+    references: str | None
     headers: dict[str, str] = field(default_factory=dict)
 
 

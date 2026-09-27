@@ -1,10 +1,11 @@
 """Service for managing tenant API keys."""
 
-import secrets
 import logging
-from datetime import datetime, timezone
+import secrets
+from datetime import UTC, datetime
+
 import bcrypt
-from typing import Optional, List, Dict
+
 from repositories.mongo_client import MongoConnection
 
 logger = logging.getLogger(__name__)
@@ -43,8 +44,8 @@ class APIKeyService:
     async def create_key(
         tenant_id: str,
         environment: str = "live",
-        name: str = None
-    ) -> Dict[str, str]:
+        name: str | None = None
+    ) -> dict[str, str]:
         """Create a new API key for a tenant.
 
         Args:
@@ -72,14 +73,14 @@ class APIKeyService:
                 "api_key_prefix": key_prefix,
                 "environment": environment,
                 "name": name or f"{environment.capitalize()} Key",
-                "created_at": datetime.now(timezone.utc),
+                "created_at": datetime.now(UTC),
                 "active": True,
                 "last_used_at": None,
                 "usage_count": 0
             }
 
             db = MongoConnection.get_database()
-            result = await db["tenant_api_keys"].insert_one(key_doc)
+            await db["tenant_api_keys"].insert_one(key_doc)
 
             logger.info(f"✓ API key created: {key_id} for tenant {tenant_id}")
 
@@ -110,7 +111,7 @@ class APIKeyService:
             db = MongoConnection.get_database()
             result = await db["tenant_api_keys"].update_one(
                 {"api_key_id": key_id, "tenant_id": tenant_id},
-                {"$set": {"active": False, "revoked_at": datetime.now(timezone.utc)}}
+                {"$set": {"active": False, "revoked_at": datetime.now(UTC)}}
             )
 
             if result.modified_count > 0:
@@ -124,7 +125,7 @@ class APIKeyService:
             raise
 
     @staticmethod
-    async def list_keys(tenant_id: str, active_only: bool = True) -> List[Dict]:
+    async def list_keys(tenant_id: str, active_only: bool = True) -> list[dict]:
         """List all API keys for a tenant.
 
         Args:
@@ -163,7 +164,7 @@ class APIKeyService:
             raise
 
     @staticmethod
-    async def get_key_info(key_id: str, tenant_id: str) -> Optional[Dict]:
+    async def get_key_info(key_id: str, tenant_id: str) -> dict | None:
         """Get information about a specific API key.
 
         Args:

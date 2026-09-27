@@ -2,6 +2,7 @@
 plaintext token must be recovered to call Shopify's Admin API)."""
 
 from cryptography.fernet import Fernet
+
 from config import get_settings
 
 

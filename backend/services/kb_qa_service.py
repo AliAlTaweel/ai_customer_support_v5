@@ -1,8 +1,8 @@
 """Knowledge-base Q&A pair management."""
 
 import uuid
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import UTC, datetime
+
 from repositories.mongo_client import MongoConnection
 from services.gemini_client import GeminiClient
 from utils.time_format import to_utc_iso_z
@@ -19,7 +19,7 @@ class KBQAService:
     async def create_qa_pair(tenant_id: str, question: str, answer: str) -> dict:
         db = KBQAService._get_db()
         qa_id = f"qa_{uuid.uuid4().hex[:12]}"
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         await db["kb_qa_pairs"].insert_one({
             "qa_id": qa_id,
@@ -41,8 +41,8 @@ class KBQAService:
 
     @staticmethod
     async def update_qa_pair(
-        tenant_id: str, qa_id: str, question: Optional[str], answer: Optional[str]
-    ) -> Optional[dict]:
+        tenant_id: str, qa_id: str, question: str | None, answer: str | None
+    ) -> dict | None:
         db = KBQAService._get_db()
         existing = await db["kb_qa_pairs"].find_one({"qa_id": qa_id, "tenant_id": tenant_id})
         if not existing:
@@ -50,7 +50,7 @@ class KBQAService:
 
         new_question = question if question is not None else existing["question"]
         new_answer = answer if answer is not None else existing["answer"]
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         await db["kb_qa_pairs"].update_one(
             {"qa_id": qa_id},

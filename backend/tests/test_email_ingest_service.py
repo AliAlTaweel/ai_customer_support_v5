@@ -1,3 +1,4 @@
+from datetime import UTC
 from unittest.mock import AsyncMock
 
 import pytest
@@ -484,7 +485,7 @@ async def test_gmail_send_failure_marks_skipped_and_does_not_burn_rate_limit(env
     assert store.records["m1"]["skip_reason"] == "delivery_failed"
 
     # Confirm it does not burn the sender's reply rate limit.
-    from datetime import datetime, timedelta, timezone
-    since = datetime.now(timezone.utc) - timedelta(hours=1)
+    from datetime import datetime, timedelta
+    since = datetime.now(UTC) - timedelta(hours=1)
     count = await store.count_replies_to_sender("T-TEST0001", "customer@example.com", since)
     assert count == 0

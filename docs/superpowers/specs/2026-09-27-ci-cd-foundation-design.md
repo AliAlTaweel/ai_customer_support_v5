@@ -327,5 +327,7 @@ emulating the runner.
 | `mypy` as a gate | Someone makes `mypy` run clean; the config here gets it running at all. |
 | Logging to stdout instead of rotating files | Before deployment, or production has no logs. |
 | `NEXT_PUBLIC_API_KEY` in the browser bundle | Before the frontend is deployed anywhere public. |
-| Branch protection requiring these checks | After the first green run on `main`. A GitHub settings change, not a file. |
+| Branch protection requiring these checks | After the first green run on `main`. A GitHub settings change, not a file. **Read the next row first** — turning it on naively will wedge merges. |
+| Path filters vs. required checks | Turning on branch protection. A *required* check that GitHub **skips** (because a PR touches neither `backend/**` nor `frontend/**` — e.g. the docs-only PRs this process produces routinely) never reports, and the PR blocks forever. At that point either drop the `paths:` filters or add a no-op job reporting the same check name. |
+| A dependency lockfile (`requirements.lock` / `pip-compile`) | Deployment, or the first "worked yesterday, fails today" build. The dev toolchain is now pinned exactly, but `requirements.txt` still uses `>=`, so the test job and the image resolve latest on every run. Pinning runtime deps changes what ships, which is a deployment-round decision, not a CI one. |
 | Bandit (`S`) and `DTZ` lint rules | As a deliberate security-lint decision, with time to adjudicate each finding. |

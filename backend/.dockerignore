@@ -1,0 +1,18 @@
+venv/
+.venv/
+__pycache__/
+*.pyc
+logs/
+*.log
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+tests/
+# Present and untracked locally. .gitignore does not apply to a build
+# context, so without these lines they would be baked into an image layer.
+# Keep this list a superset of the repo .gitignore's secret entries.
+.env
+.env.*
+secrets/
+credentials.json
+client_secret*.json

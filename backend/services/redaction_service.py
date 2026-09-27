@@ -15,7 +15,6 @@ docs/superpowers/specs/2026-07-25-ai-customer-support-rag-design.md.
 
 import re
 
-
 _CREDENTIAL_RE = re.compile(r'\b(?:password|passwd|otp|pin)\s*[:=]\s*\S+', re.IGNORECASE)
 _IP_RE = re.compile(
     r'\b(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\b'

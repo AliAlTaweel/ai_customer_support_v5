@@ -1,11 +1,19 @@
 """Knowledge base API endpoints: PDF documents, Q&A pairs, AI settings."""
 
 import logging
-from fastapi import APIRouter, Request, HTTPException, UploadFile, File
+
+from fastapi import APIRouter, File, HTTPException, Request, UploadFile
+
 from models.knowledge_base import (
-    UploadDocumentResponse, ListDocumentsResponse, DocumentSummary,
-    QAPairCreate, QAPairUpdate, QAPairResponse, ListQAPairsResponse,
-    AISettingsRequest, AISettingsResponse,
+    AISettingsRequest,
+    AISettingsResponse,
+    DocumentSummary,
+    ListDocumentsResponse,
+    ListQAPairsResponse,
+    QAPairCreate,
+    QAPairResponse,
+    QAPairUpdate,
+    UploadDocumentResponse,
 )
 from services.kb_document_service import KBDocumentService
 from services.kb_qa_service import KBQAService
@@ -19,7 +27,10 @@ MAX_PDF_SIZE_BYTES = 10 * 1024 * 1024  # 10MB
 
 
 @router.post("/documents", response_model=UploadDocumentResponse, status_code=202)
-async def upload_document(request: Request, file: UploadFile = File(...)):
+async def upload_document(
+    request: Request,
+    file: UploadFile = File(...),  # noqa: B008 -- FastAPI's dependency idiom; the call in the default IS the declaration
+):
     if file.content_type != "application/pdf":
         raise HTTPException(status_code=415, detail="Only PDF files are supported")
 

@@ -12,7 +12,7 @@ Usage:
 import argparse
 import asyncio
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from config import get_settings
 from repositories.mongo_client import MongoConnection
@@ -25,7 +25,7 @@ async def seed_tenant(name: str, organization_email: str) -> None:
     db = MongoConnection.get_database()
 
     tenant_id = f"T-{uuid.uuid4().hex[:8].upper()}"
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     await db["tenants"].insert_one({
         "tenant_id": tenant_id,

@@ -77,6 +77,7 @@ class Database:
     async def init_knowledge_base_collections(cls) -> None:
         """Initialize knowledge base collections with proper indexes"""
         from pymongo.operations import SearchIndexModel
+
         from repositories.mongo_client import MongoConnection
 
         db = MongoConnection.get_database()

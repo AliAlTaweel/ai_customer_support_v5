@@ -4,8 +4,7 @@ The unique index on gmail_message_id (created in database.py) is what makes
 double-sending structurally impossible rather than something we remember to
 check.
 """
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import UTC, datetime
 
 from pymongo.errors import DuplicateKeyError
 
@@ -41,7 +40,7 @@ class ProcessedEmailStore:
                 "status": "processing",
                 "conversation_id": None,
                 "skip_reason": None,
-                "processed_at": datetime.now(timezone.utc),
+                "processed_at": datetime.now(UTC),
             })
             return True
         except DuplicateKeyError:
@@ -51,10 +50,10 @@ class ProcessedEmailStore:
         self,
         gmail_message_id: str,
         status: str,
-        conversation_id: Optional[str] = None,
-        skip_reason: Optional[str] = None,
+        conversation_id: str | None = None,
+        skip_reason: str | None = None,
     ) -> None:
-        updates = {"status": status, "processed_at": datetime.now(timezone.utc)}
+        updates = {"status": status, "processed_at": datetime.now(UTC)}
         if conversation_id:
             updates["conversation_id"] = conversation_id
         if skip_reason:

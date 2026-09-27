@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -59,7 +59,7 @@ async def test_mark_updates_status_and_conversation(collection):
 
 async def test_count_replies_filters_by_sender_and_status(collection):
     store = ProcessedEmailStore()
-    since = datetime.now(timezone.utc) - timedelta(hours=1)
+    since = datetime.now(UTC) - timedelta(hours=1)
     await store.count_replies_to_sender("T-1", "a@b.com", since)
 
     query = collection.count_documents.await_args.args[0]
@@ -80,7 +80,7 @@ async def test_fake_claim_is_idempotent():
 
 async def test_fake_counts_only_sent_statuses():
     store = InMemoryProcessedEmailStore()
-    since = datetime.now(timezone.utc) - timedelta(hours=1)
+    since = datetime.now(UTC) - timedelta(hours=1)
 
     await store.claim("m1", "t1", "T-1", "a@b.com")
     await store.mark("m1", "replied")

@@ -1,12 +1,14 @@
 """PDF knowledge-base document ingestion and management."""
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from io import BytesIO
+
 from pypdf import PdfReader
+
 from repositories.mongo_client import MongoConnection
-from services.gemini_client import GeminiClient
 from services.chunking import chunk_text
+from services.gemini_client import GeminiClient
 from utils.logger import logger
 from utils.time_format import to_utc_iso_z
 
@@ -22,7 +24,7 @@ class KBDocumentService:
     async def upload_document(tenant_id: str, filename: str, file_bytes: bytes) -> dict:
         db = KBDocumentService._get_db()
         document_id = f"doc_{uuid.uuid4().hex[:12]}"
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         await db["kb_documents"].insert_one({
             "document_id": document_id,
@@ -41,7 +43,7 @@ class KBDocumentService:
             if not full_text.strip():
                 await db["kb_documents"].update_one(
                     {"document_id": document_id},
-                    {"$set": {"status": "failed", "updated_at": datetime.now(timezone.utc)}}
+                    {"$set": {"status": "failed", "updated_at": datetime.now(UTC)}}
                 )
                 return {"document_id": document_id, "filename": filename, "status": "failed"}
 
@@ -67,7 +69,7 @@ class KBDocumentService:
                 {"$set": {
                     "status": "ready",
                     "chunk_count": len(chunk_docs),
-                    "updated_at": datetime.now(timezone.utc),
+                    "updated_at": datetime.now(UTC),
                 }}
             )
             return {"document_id": document_id, "filename": filename, "status": "ready"}
@@ -76,7 +78,7 @@ class KBDocumentService:
             logger.error(f"Failed to process document {document_id}: {e}")
             await db["kb_documents"].update_one(
                 {"document_id": document_id},
-                {"$set": {"status": "failed", "updated_at": datetime.now(timezone.utc)}}
+                {"$set": {"status": "failed", "updated_at": datetime.now(UTC)}}
             )
             return {"document_id": document_id, "filename": filename, "status": "failed"}
 

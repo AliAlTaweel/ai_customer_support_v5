@@ -1,7 +1,7 @@
 """Request/response models for the knowledge base API."""
 
+
 from pydantic import BaseModel, Field
-from typing import Optional, List
 
 
 class DocumentSummary(BaseModel):
@@ -19,7 +19,7 @@ class UploadDocumentResponse(BaseModel):
 
 
 class ListDocumentsResponse(BaseModel):
-    documents: List[DocumentSummary]
+    documents: list[DocumentSummary]
 
 
 class QAPairCreate(BaseModel):
@@ -28,8 +28,8 @@ class QAPairCreate(BaseModel):
 
 
 class QAPairUpdate(BaseModel):
-    question: Optional[str] = Field(None, min_length=1, max_length=1000)
-    answer: Optional[str] = Field(None, min_length=1, max_length=5000)
+    question: str | None = Field(None, min_length=1, max_length=1000)
+    answer: str | None = Field(None, min_length=1, max_length=5000)
 
 
 class QAPairResponse(BaseModel):
@@ -40,7 +40,7 @@ class QAPairResponse(BaseModel):
 
 
 class ListQAPairsResponse(BaseModel):
-    qa_pairs: List[QAPairResponse]
+    qa_pairs: list[QAPairResponse]
 
 
 class AISettingsRequest(BaseModel):

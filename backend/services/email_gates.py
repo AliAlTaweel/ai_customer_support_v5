@@ -4,7 +4,6 @@ Auto-send with no human in the loop over attacker-controlled input makes
 these load-bearing. Every function here is pure.
 """
 import re
-from typing import Optional
 
 from services.email_parser import ParsedEmail
 
@@ -66,7 +65,7 @@ def is_deferrable(skip_reason: str) -> bool:
     return skip_reason in DEFERRABLE_SKIP_REASONS
 
 
-def check_loop_gates(email: ParsedEmail, mailbox_address: str) -> Optional[str]:
+def check_loop_gates(email: ParsedEmail, mailbox_address: str) -> str | None:
     """Return a SkipReason if this message must not be auto-answered.
 
     Two autoresponders without these checks will mail each other until
@@ -84,9 +83,10 @@ def check_loop_gates(email: ParsedEmail, mailbox_address: str) -> Optional[str]:
     if "list-id" in headers or "list-unsubscribe" in headers:
         return SkipReason.MAILING_LIST
 
-    if headers.get("return-path", "").strip() in ("<>", ""):
-        if "return-path" in headers:
-            return SkipReason.BOUNCE
+    # Presence first: an absent return-path defaults to "", which would
+    # otherwise match the empty-string case and flag every mail as a bounce.
+    if "return-path" in headers and headers["return-path"].strip() in ("<>", ""):
+        return SkipReason.BOUNCE
 
     address = email.from_address.lower()
     local_part = address.split("@", 1)[0]
@@ -104,7 +104,7 @@ def check_loop_gates(email: ParsedEmail, mailbox_address: str) -> Optional[str]:
     return None
 
 
-def check_sender_authentication(email: ParsedEmail) -> Optional[str]:
+def check_sender_authentication(email: ParsedEmail) -> str | None:
     """Return SkipReason.AUTH_FAILED if Gmail says the sender is forged.
 
     Gmail stamps `Authentication-Results` on everything it accepts. Without

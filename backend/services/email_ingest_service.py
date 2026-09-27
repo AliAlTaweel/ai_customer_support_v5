@@ -12,8 +12,7 @@ Order of operations matters:
   produce a duplicate reply.
 """
 from collections import Counter
-from datetime import datetime, timedelta, timezone
-from typing import Optional
+from datetime import UTC, datetime, timedelta
 
 from config import get_settings
 from services.chat_service import ChatService, EmailDeliveryError
@@ -199,7 +198,7 @@ class EmailIngestService:
     @staticmethod
     async def _rejection_reason(
         email: ParsedEmail, settings, store, tenant_id: str
-    ) -> Optional[str]:
+    ) -> str | None:
         loop_reason = check_loop_gates(email, settings.GMAIL_ADDRESS)
         if loop_reason:
             return loop_reason
@@ -211,7 +210,7 @@ class EmailIngestService:
         if not is_allowed_sender(email.from_address, settings.GMAIL_ALLOWED_SENDERS):
             return SkipReason.NOT_ALLOWLISTED
 
-        since = datetime.now(timezone.utc) - timedelta(hours=1)
+        since = datetime.now(UTC) - timedelta(hours=1)
 
         sender_count = await store.count_replies_to_sender(
             tenant_id, email.from_address, since

@@ -3,16 +3,15 @@ or escalate."""
 
 import time
 from dataclasses import dataclass
-from typing import Optional
+
+from config import get_settings
 from repositories.mongo_client import MongoConnection
-from services.redaction_service import redact_text
+from services.ecommerce_order_service import EcommerceOrderService
 from services.gemini_client import GeminiClient
+from services.redaction_service import redact_text
 from services.shopify_order_service import ShopifyOrderService
 from services.shopify_product_service import ShopifyProductService
-from services.ecommerce_order_service import EcommerceOrderService
-from config import get_settings
 from utils.logger import logger
-
 
 ESCALATE_TOOL = {
     "name": "escalate_to_human",
@@ -110,11 +109,11 @@ ECOMMERCE_SYSTEM_INSTRUCTION_ADDENDUM = (
 @dataclass
 class AIReplyResult:
     answered: bool
-    answer: Optional[str]
-    escalate_reason: Optional[str]
-    redacted_input: Optional[str] = None
-    token_count: Optional[int] = None
-    duration_ms: Optional[int] = None
+    answer: str | None
+    escalate_reason: str | None
+    redacted_input: str | None = None
+    token_count: int | None = None
+    duration_ms: int | None = None
 
 
 class AIReplyService:
@@ -155,7 +154,7 @@ class AIReplyService:
 
     @staticmethod
     async def generate_reply(
-        tenant_id: str, customer_message: str, customer_identifier: Optional[str] = None
+        tenant_id: str, customer_message: str, customer_identifier: str | None = None
     ) -> AIReplyResult:
         try:
             redacted_message = redact_text(customer_message)
@@ -236,7 +235,7 @@ class AIReplyService:
     @staticmethod
     async def _handle_order_status_call(
         tenant_id: str, args: dict, redacted_message: str,
-        token_count: Optional[int], duration_ms: Optional[int],
+        token_count: int | None, duration_ms: int | None,
     ) -> AIReplyResult:
         result = await ShopifyOrderService.get_order_status(
             tenant_id=tenant_id,
@@ -271,7 +270,7 @@ class AIReplyService:
     @staticmethod
     async def _handle_product_info_call(
         tenant_id: str, args: dict, redacted_message: str,
-        token_count: Optional[int], duration_ms: Optional[int],
+        token_count: int | None, duration_ms: int | None,
     ) -> AIReplyResult:
         result = await ShopifyProductService.get_product_info(
             tenant_id=tenant_id,
@@ -303,8 +302,8 @@ class AIReplyService:
 
     @staticmethod
     async def _handle_my_orders_call(
-        tenant_id: str, customer_identifier: Optional[str], redacted_message: str,
-        token_count: Optional[int], duration_ms: Optional[int],
+        tenant_id: str, customer_identifier: str | None, redacted_message: str,
+        token_count: int | None, duration_ms: int | None,
     ) -> AIReplyResult:
         if not customer_identifier:
             return AIReplyResult(
