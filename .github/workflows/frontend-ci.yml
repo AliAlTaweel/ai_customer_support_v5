@@ -36,6 +36,13 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # PageProps/LayoutProps are global helpers Next generates into
+      # .next/types (tsconfig already includes that path). They exist locally
+      # only because a build ran earlier, so on a clean checkout tsc fails with
+      # "Cannot find name 'LayoutProps'" unless they are generated first.
+      - name: Generate route types
+        run: npx next typegen
+
       - name: Type check
         run: npx tsc --noEmit
 
