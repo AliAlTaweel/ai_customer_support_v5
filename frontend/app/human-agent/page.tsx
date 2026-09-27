@@ -35,10 +35,7 @@ export default function HumanAgentPage() {
   }, []);
 
   useEffect(() => {
-    if (!selectedId) {
-      setMessages([]);
-      return;
-    }
+    if (!selectedId) return;
 
     async function loadThread() {
       try {
@@ -87,7 +84,12 @@ export default function HumanAgentPage() {
           {conversations.map((c) => (
             <button
               key={c.conversation_id}
-              onClick={() => setSelectedId(c.conversation_id)}
+              onClick={() => {
+                setSelectedId(c.conversation_id);
+                // Clear here, not in the effect: switching threads should not
+                // show the previous conversation's messages while the new one loads.
+                setMessages([]);
+              }}
               className={`flex w-full flex-col gap-1 border-b border-gray-100 px-4 py-3 text-left hover:bg-gray-50 ${
                 selectedId === c.conversation_id ? "bg-blue-50" : ""
               }`}

@@ -28,8 +28,28 @@ export default function KnowledgeBasePage() {
     }
   }
 
+  // Not loadPairs(): its synchronous setLoading(true) in an effect body is
+  // what react-hooks/set-state-in-effect rejects, and `loading` already
+  // starts true. The cancelled flag also stops a late response from setting
+  // state after unmount.
   useEffect(() => {
-    loadPairs();
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await listQAPairs();
+        if (!cancelled) {
+          setPairs(data);
+          setError(null);
+        }
+      } catch {
+        if (!cancelled) setError("Failed to load knowledge base.");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   async function handleAdd() {
