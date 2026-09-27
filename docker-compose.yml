@@ -1,0 +1,71 @@
+# Production deployment for a single VM (e.g. a GCP Compute Engine instance).
+# See docs/DEPLOY.md for the step-by-step walkthrough.
+#
+# Three containers:
+#   api    - the FastAPI backend, reachable only from inside this compose network
+#   poller - the Gmail poll worker: the SAME image, different command, so a
+#            crash here cannot take the API down (see backend/scripts/poll_gmail.py)
+#   caddy  - the only container with published ports; terminates TLS and proxies to api
+
+services:
+  api:
+    build: ./backend
+    image: acs-backend:latest
+    # backend/.env is NOT in the image (backend/.dockerignore excludes it on
+    # purpose). It is read from the host at container start instead.
+    env_file: ./backend/.env
+    environment:
+      # The Dockerfile binds ${PORT:-8000}; set it explicitly so the value the
+      # proxy targets and the value uvicorn binds can never drift apart.
+      PORT: "8000"
+    restart: always
+    expose:
+      - "8000"
+    volumes:
+      # utils/logging_setup.py writes rotating files into /app/logs. Without a
+      # volume those logs vanish on every redeploy.
+      - api_logs:/app/logs
+    healthcheck:
+      # No curl in python:3.12-slim, so use the interpreter that is there.
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health').read()"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+
+  poller:
+    # Same build and tag as `api`: one image, built once, run twice.
+    build: ./backend
+    image: acs-backend:latest
+    command: python -m scripts.poll_gmail
+    env_file: ./backend/.env
+    restart: always
+    depends_on:
+      - api
+    volumes:
+      - poller_logs:/app/logs
+
+  caddy:
+    image: caddy:2
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      # Read by ./Caddyfile as {$APP_DOMAIN}. Set it in the .env file that sits
+      # next to this compose file.
+      APP_DOMAIN: ${APP_DOMAIN:?set APP_DOMAIN in .env next to docker-compose.yml}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # Issued TLS certificates live here. Losing this volume means re-issuing
+      # them on every restart, which will hit Let's Encrypt rate limits.
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - api
+
+volumes:
+  api_logs:
+  poller_logs:
+  caddy_data:
+  caddy_config:

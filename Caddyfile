@@ -1,0 +1,21 @@
+# Reverse proxy in front of the backend. Caddy requests and renews a TLS
+# certificate automatically, as long as APP_DOMAIN is a real domain whose DNS
+# A record points at this VM and ports 80 + 443 are open.
+#
+# APP_DOMAIN comes from the .env file next to docker-compose.yml:
+#   with a domain:    APP_DOMAIN=api.yourdomain.com     -> HTTPS, auto certificate
+#   no domain yet:    APP_DOMAIN=http://34.12.34.56     -> plain HTTP on the VM's IP
+#                     (the http:// prefix is what disables TLS; a bare IP cannot
+#                      be certified, so leaving it off breaks the site instead)
+
+{$APP_DOMAIN} {
+	# `api` is the compose service name; Docker's internal DNS resolves it.
+	reverse_proxy api:8000
+
+	encode gzip
+
+	log {
+		output stdout
+		format console
+	}
+}
