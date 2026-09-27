@@ -1,0 +1,89 @@
+name: backend-ci
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'backend/**'
+      - '.github/workflows/backend-ci.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'backend/**'
+      - '.github/workflows/backend-ci.yml'
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    services:
+      # The app's lifespan calls Database.connect() and re-raises on failure,
+      # so the container smoke test below needs a real Mongo. The unit tests
+      # do not -- they use hand-written fakes.
+      mongo:
+        image: mongo:7
+        ports:
+          - 27017:27017
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: backend/requirements-dev.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Lint (gate)
+        run: ruff check .
+
+      - name: Tests (gate)
+        run: pytest -q
+
+      - name: Format check (advisory)
+        run: black --check .
+        continue-on-error: true
+
+      - name: Type check (advisory)
+        run: mypy .
+        continue-on-error: true
+
+      - name: Build image
+        run: docker build -t backend:ci .
+
+      - name: Boot the container and require /health
+        run: |
+          docker run -d --name backend-smoke --network host \
+            -e MONGODB_URL="mongodb://localhost:27017" \
+            -e MONGODB_DATABASE_NAME=ci_smoke \
+            -e GEMINI_API_KEY=ci-dummy \
+            -e PORT=8000 \
+            backend:ci
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:8000/health; then
+              echo "container healthy"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::container did not serve /health within 30s"
+          docker logs backend-smoke
+          exit 1
+
+      - name: Assert the image ships no secrets
+        run: |
+          docker run --rm backend:ci sh -c '
+            test ! -e /app/credentials.json &&
+            test ! -e /app/.env &&
+            test ! -d /app/venv &&
+            test ! -d /app/tests &&
+            echo CLEAN'
+
+      - name: Clean up the smoke container
+        if: always()
+        run: docker rm -f backend-smoke || true
