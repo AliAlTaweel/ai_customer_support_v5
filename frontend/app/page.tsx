@@ -11,6 +11,7 @@ interface ChatMessage {
 }
 
 const POLL_INTERVAL_MS = 4000;
+const CONVERSATION_ID_STORAGE_KEY = "chat.conversationId";
 
 const BULLET_RE = /^(\*|-|\d+\.)\s+/;
 
@@ -70,7 +71,30 @@ export default function ChatPage() {
   const seenMessageIds = useRef<Set<string>>(new Set());
 
   useEffect(() => {
+    const storedConversationId = localStorage.getItem(CONVERSATION_ID_STORAGE_KEY);
+    if (!storedConversationId) return;
+
+    (async () => {
+      try {
+        const { messages: serverMessages } = await getConversation(storedConversationId);
+        serverMessages.forEach((m) => seenMessageIds.current.add(m.message_id));
+        setMessages(
+          serverMessages.map((m) => ({
+            id: m.message_id,
+            sender: m.sender,
+            content: m.content,
+          }))
+        );
+        setConversationId(storedConversationId);
+      } catch {
+        localStorage.removeItem(CONVERSATION_ID_STORAGE_KEY);
+      }
+    })();
+  }, []);
+
+  useEffect(() => {
     if (!conversationId) return;
+    localStorage.setItem(CONVERSATION_ID_STORAGE_KEY, conversationId);
 
     const interval = setInterval(async () => {
       try {
