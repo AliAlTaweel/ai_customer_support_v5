@@ -53,27 +53,53 @@ jobs:
         run: mypy .
         continue-on-error: true
 
+      # A clean checkout has no .env / credentials.json / venv, so without
+      # these the no-secrets assertion below would pass vacuously and could
+      # never catch a .dockerignore regression. Plant them so it is a live test
+      # against files that really are in the build context.
+      - name: Plant decoy secrets in the build context
+        run: |
+          echo "CI_DECOY=must-not-ship" > .env
+          echo '{"decoy":"must-not-ship"}' > credentials.json
+          mkdir -p venv && echo "decoy" > venv/decoy.txt
+
       - name: Build image
         run: docker build -t backend:ci .
 
-      - name: Boot the container and require /health
+      # PORT is deliberately NOT 8000 here: 8000 is the ${PORT:-8000} fallback
+      # in the Dockerfile, so polling 8000 would pass even if PORT were ignored
+      # entirely. Cloud Run injects PORT, so this is the path that must work.
+      - name: Boot the container and require /health on the injected PORT
         run: |
           docker run -d --name backend-smoke --network host \
             -e MONGODB_URL="mongodb://localhost:27017" \
             -e MONGODB_DATABASE_NAME=ci_smoke \
             -e GEMINI_API_KEY=ci-dummy \
-            -e PORT=8000 \
+            -e PORT=9090 \
             backend:ci
+          healthy=0
           for i in $(seq 1 30); do
-            if curl -fsS http://localhost:8000/health; then
-              echo "container healthy"
-              exit 0
+            if curl -fsS http://localhost:9090/health; then
+              echo "container healthy on injected PORT 9090"
+              healthy=1
+              break
             fi
             sleep 1
           done
-          echo "::error::container did not serve /health within 30s"
-          docker logs backend-smoke
-          exit 1
+          if [ "$healthy" -ne 1 ]; then
+            echo "::error::container did not serve /health on PORT=9090 within 30s"
+            docker logs backend-smoke
+            exit 1
+          fi
+          # Losing non-root would also disarm the check above: root can always
+          # write /app/logs, so the import-time RotatingFileHandler failure
+          # mode would silently stop being tested.
+          uid=$(docker exec backend-smoke id -u)
+          if [ "$uid" != "1000" ]; then
+            echo "::error::container runs as uid $uid, expected non-root 1000"
+            exit 1
+          fi
+          echo "container runs as uid 1000"
 
       - name: Assert the image ships no secrets
         run: |

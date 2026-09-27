@@ -3,11 +3,17 @@
 # never ships the test or lint tooling.
 -r requirements.txt
 
+# Pinned exactly, not floored. ruff adds rules to existing families (E, F, I,
+# UP, B, SIM, RUF) in ordinary releases, so a `>=` here means a new ruff can
+# turn the gate red on code nobody touched -- the precise failure the landing
+# order in the design doc was built to avoid. Bump these deliberately, with
+# the resulting findings cleared in the same commit.
+
 # Testing
-pytest>=7.4.0
-pytest-asyncio>=0.21.0
+pytest==9.1.1
+pytest-asyncio==1.4.0
 
 # Code Quality
-black>=23.0.0
-ruff>=0.1.0
-mypy>=1.7.0
+black==26.5.1
+ruff==0.16.9
+mypy==2.3.1

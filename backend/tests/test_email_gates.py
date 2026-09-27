@@ -52,6 +52,18 @@ def test_rejects_bounce_with_empty_return_path():
     assert check_loop_gates(email, MAILBOX) == SkipReason.BOUNCE
 
 
+def test_missing_return_path_is_not_a_bounce():
+    """A message with no Return-Path at all must pass the bounce gate.
+
+    The gate reads the header with a "" default, so testing the value before
+    confirming the header exists would classify every Return-Path-less mail as
+    a bounce -- silently dropping ordinary customer email with no error
+    anywhere. This pins the presence check that prevents that.
+    """
+    email = _email(extra_headers={"Return-Path": None})
+    assert check_loop_gates(email, MAILBOX) is None
+
+
 @pytest.mark.parametrize(
     "address",
     [

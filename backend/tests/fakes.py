@@ -24,6 +24,10 @@ def gmail_message(
         "Return-Path": f"<{from_address}>",
     }
     headers.update(extra_headers or {})
+    # A None value omits the header entirely, which is the only way to build a
+    # message *missing* one of the defaults above (e.g. no Return-Path, which
+    # the bounce gate must not treat as an empty Return-Path).
+    headers = {k: v for k, v in headers.items() if v is not None}
     return {
         "id": message_id,
         "threadId": thread_id,

@@ -85,9 +85,13 @@ export default function HumanAgentPage() {
             <button
               key={c.conversation_id}
               onClick={() => {
+                if (c.conversation_id === selectedId) return;
                 setSelectedId(c.conversation_id);
                 // Clear here, not in the effect: switching threads should not
-                // show the previous conversation's messages while the new one loads.
+                // show the previous conversation's messages while the new one
+                // loads. Guarded above because re-clicking the open thread does
+                // not change selectedId, so the [selectedId] effect would not
+                // re-run and the thread would sit empty until the next poll.
                 setMessages([]);
               }}
               className={`flex w-full flex-col gap-1 border-b border-gray-100 px-4 py-3 text-left hover:bg-gray-50 ${
