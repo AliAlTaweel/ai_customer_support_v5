@@ -3,6 +3,7 @@
 import logging
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
+from typing import ClassVar
 
 # Create logs directory if it doesn't exist
 LOGS_DIR = Path(__file__).parent.parent / "logs"
@@ -18,7 +19,7 @@ AI_LOG_FILE = LOGS_DIR / "ai_responses.log"
 class ColoredFormatter(logging.Formatter):
     """Formatter that adds color to console output."""
 
-    COLORS = {
+    COLORS: ClassVar[dict[str, str]] = {
         'DEBUG': '\033[36m',      # Cyan
         'INFO': '\033[32m',       # Green
         'WARNING': '\033[33m',    # Yellow
@@ -34,7 +35,7 @@ class ColoredFormatter(logging.Formatter):
         return super().format(record)
 
 
-def setup_logging(logger_name: str = None) -> logging.Logger:
+def setup_logging(logger_name: str | None = None) -> logging.Logger:
     """
     Set up logging with both file and console output.
 

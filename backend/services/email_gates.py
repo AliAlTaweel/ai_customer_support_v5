@@ -83,9 +83,10 @@ def check_loop_gates(email: ParsedEmail, mailbox_address: str) -> str | None:
     if "list-id" in headers or "list-unsubscribe" in headers:
         return SkipReason.MAILING_LIST
 
-    if headers.get("return-path", "").strip() in ("<>", ""):
-        if "return-path" in headers:
-            return SkipReason.BOUNCE
+    # Presence first: an absent return-path defaults to "", which would
+    # otherwise match the empty-string case and flag every mail as a bounce.
+    if "return-path" in headers and headers["return-path"].strip() in ("<>", ""):
+        return SkipReason.BOUNCE
 
     address = email.from_address.lower()
     local_part = address.split("@", 1)[0]

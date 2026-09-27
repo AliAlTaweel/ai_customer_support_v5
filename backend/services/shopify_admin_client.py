@@ -26,19 +26,21 @@ class ShopifyAdminClient:
         timeout = aiohttp.ClientTimeout(total=REQUEST_TIMEOUT_SECONDS)
 
         try:
-            async with aiohttp.ClientSession(timeout=timeout) as session:
-                async with session.post(url, json=payload, headers=headers) as resp:
-                    if resp.status != 200:
-                        body = await resp.text()
-                        logger.error(f"Shopify Admin API returned {resp.status} for {shop_domain}: {body}")
-                        raise ShopifyAdminAPIError(f"Shopify Admin API returned status {resp.status}")
+            async with (
+                aiohttp.ClientSession(timeout=timeout) as session,
+                session.post(url, json=payload, headers=headers) as resp,
+            ):
+                if resp.status != 200:
+                    body = await resp.text()
+                    logger.error(f"Shopify Admin API returned {resp.status} for {shop_domain}: {body}")
+                    raise ShopifyAdminAPIError(f"Shopify Admin API returned status {resp.status}")
 
-                    body = await resp.json()
-                    if "errors" in body:
-                        logger.error(f"Shopify Admin API GraphQL errors for {shop_domain}: {body['errors']}")
-                        raise ShopifyAdminAPIError(f"Shopify Admin API GraphQL errors: {body['errors']}")
+                body = await resp.json()
+                if "errors" in body:
+                    logger.error(f"Shopify Admin API GraphQL errors for {shop_domain}: {body['errors']}")
+                    raise ShopifyAdminAPIError(f"Shopify Admin API GraphQL errors: {body['errors']}")
 
-                    return body["data"]
+                return body["data"]
         except (TimeoutError, aiohttp.ClientError) as e:
             logger.error(f"Shopify Admin API request failed for {shop_domain}: {e}")
             raise ShopifyAdminAPIError(f"Shopify Admin API request failed: {e}") from e

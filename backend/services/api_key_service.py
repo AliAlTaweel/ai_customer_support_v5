@@ -44,7 +44,7 @@ class APIKeyService:
     async def create_key(
         tenant_id: str,
         environment: str = "live",
-        name: str = None
+        name: str | None = None
     ) -> dict[str, str]:
         """Create a new API key for a tenant.
 
@@ -80,7 +80,7 @@ class APIKeyService:
             }
 
             db = MongoConnection.get_database()
-            result = await db["tenant_api_keys"].insert_one(key_doc)
+            await db["tenant_api_keys"].insert_one(key_doc)
 
             logger.info(f"✓ API key created: {key_id} for tenant {tenant_id}")
 

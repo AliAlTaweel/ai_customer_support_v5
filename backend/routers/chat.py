@@ -35,7 +35,7 @@ async def send_message(request: Request, req: SendMessageRequest):
         raise HTTPException(
             status_code=500,
             detail=f"Error sending message: {e!s}"
-        )
+        ) from e
 
 
 @router.get("/conversations", response_model=ListConversationsResponse)
@@ -43,8 +43,8 @@ async def list_conversations(
     request: Request,
     limit: int = 20,
     offset: int = 0,
-    status: str = None,
-    channel: str = None
+    status: str | None = None,
+    channel: str | None = None
 ):
     """List all conversations for tenant, optionally filtered by channel"""
     try:
@@ -64,13 +64,13 @@ async def list_conversations(
         )
         return response
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
         logger.error(f"Error listing conversations: {e!s}")
         raise HTTPException(
             status_code=500,
             detail=f"Error listing conversations: {e!s}"
-        )
+        ) from e
 
 
 @router.get("/conversations/{conversation_id}", response_model=GetConversationResponse)
@@ -92,7 +92,7 @@ async def get_conversation(
         raise HTTPException(
             status_code=500,
             detail=f"Error retrieving conversation: {e!s}"
-        )
+        ) from e
 
 
 @router.post("/conversations/{conversation_id}/reply", response_model=ReplyResponse)
@@ -123,13 +123,13 @@ async def reply_to_conversation(
         raise HTTPException(
             status_code=502,
             detail="Reply saved but the email could not be sent. Please retry.",
-        )
+        ) from e
     except Exception as e:
         logger.error(f"Error sending reply: {e!s}")
         raise HTTPException(
             status_code=500,
             detail=f"Error sending reply: {e!s}"
-        )
+        ) from e
 
 
 @router.patch("/conversations/{conversation_id}/read")
@@ -148,7 +148,7 @@ async def mark_as_read(request: Request, conversation_id: str):
         raise HTTPException(
             status_code=500,
             detail=f"Error marking as read: {e!s}"
-        )
+        ) from e
 
 
 @router.patch("/conversations/{conversation_id}/close", response_model=StatusChangeResponse)
@@ -171,7 +171,7 @@ async def close_conversation(request: Request, conversation_id: str):
         raise HTTPException(
             status_code=500,
             detail=f"Error closing conversation: {e!s}"
-        )
+        ) from e
 
 
 @router.patch("/conversations/{conversation_id}/reopen", response_model=StatusChangeResponse)
@@ -194,4 +194,4 @@ async def reopen_conversation(request: Request, conversation_id: str):
         raise HTTPException(
             status_code=500,
             detail=f"Error reopening conversation: {e!s}"
-        )
+        ) from e

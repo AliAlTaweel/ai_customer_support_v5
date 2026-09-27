@@ -21,13 +21,15 @@ class EcommerceShopClient:
         timeout = aiohttp.ClientTimeout(total=REQUEST_TIMEOUT_SECONDS)
 
         try:
-            async with aiohttp.ClientSession(timeout=timeout) as session:
-                async with session.get(url, headers=headers, params=params) as resp:
-                    if resp.status != 200:
-                        body = await resp.text()
-                        logger.error(f"Ecommerce shop API returned {resp.status} for {url}: {body}")
-                        raise EcommerceShopAPIError(f"Ecommerce shop API returned status {resp.status}")
-                    return await resp.json()
+            async with (
+                aiohttp.ClientSession(timeout=timeout) as session,
+                session.get(url, headers=headers, params=params) as resp,
+            ):
+                if resp.status != 200:
+                    body = await resp.text()
+                    logger.error(f"Ecommerce shop API returned {resp.status} for {url}: {body}")
+                    raise EcommerceShopAPIError(f"Ecommerce shop API returned status {resp.status}")
+                return await resp.json()
         except (TimeoutError, aiohttp.ClientError) as e:
             logger.error(f"Ecommerce shop API request failed for {url}: {e}")
             raise EcommerceShopAPIError(f"Ecommerce shop API request failed: {e}") from e

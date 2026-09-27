@@ -11,8 +11,5 @@ def to_utc_iso_z(dt: datetime) -> str:
     formatting so the result is always Z-suffixed, regardless of whether
     the datetime read back is naive or already tz-aware.
     """
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=UTC)
-    else:
-        dt = dt.astimezone(UTC)
+    dt = dt.replace(tzinfo=UTC) if dt.tzinfo is None else dt.astimezone(UTC)
     return dt.isoformat().replace("+00:00", "Z")

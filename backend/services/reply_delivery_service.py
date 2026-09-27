@@ -103,13 +103,15 @@ class ReplyDeliveryService:
         import aiohttp
 
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(webhook_url, json=payload) as resp:
-                    if resp.status == 200:
-                        logger.info(f"✅ Webhook sent to {webhook_url}")
-                    else:
-                        logger.warning(
-                            f"⚠️ Webhook failed ({resp.status}) for {webhook_url}: {await resp.text()}"
-                        )
+            async with (
+                aiohttp.ClientSession() as session,
+                session.post(webhook_url, json=payload) as resp,
+            ):
+                if resp.status == 200:
+                    logger.info(f"✅ Webhook sent to {webhook_url}")
+                else:
+                    logger.warning(
+                        f"⚠️ Webhook failed ({resp.status}) for {webhook_url}: {await resp.text()}"
+                    )
         except Exception as e:
             logger.error(f"❌ Error sending webhook to {webhook_url}: {e!s}")
