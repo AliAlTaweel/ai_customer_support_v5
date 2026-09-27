@@ -40,7 +40,8 @@ numbers drive the design, so they are recorded rather than assumed.
 | `ruff check .` (backend, unpinned) | 235 findings; 179 auto-fixable |
 | `ruff check .` (backend, default rules only) | 13 findings |
 | `ruff check .` (backend, rule set selected below) | 379 findings — of which 175 are `E501` |
-| same, ignoring `E501`, after `--fix` | **21 findings remain**; `pytest` still 139 passed |
+| same, ignoring `E501`, `target-version = py312` | 230 findings; 200 auto-fixable |
+| same, after `--fix` | **22 findings remain**; `pytest` on 3.12 still 139 passed |
 | `black --check .` (backend) | 51 of 61 files would be reformatted |
 | `mypy .` (backend) | Does not run: 3 errors, module-path resolution on `tests/` |
 | `npx tsc --noEmit` (frontend) | exit 0 |
@@ -63,8 +64,28 @@ both via `os.environ.setdefault`. Tests use hand-written fakes, not live
 services. This design preserves that property rather than adding service
 containers to the test job.
 
-Local toolchain versions, which CI matches to avoid version skew:
-Python **3.14.7**, Node **v26.9.0**.
+## Python version
+
+The project standardizes on **Python 3.12** — local venv, CI, and the
+container image all pin it. 3.12 is the more mature target, and the
+existing `backend/venv` on 3.14.7 is the odd one out rather than the
+reference.
+
+Verified before committing to this, on a throwaway 3.12.13 venv: every
+entry in `requirements.txt` installs cleanly, and the suite reports **139
+passed**. The `DeprecationWarning` that `google-genai` emits under 3.14
+(`_UnionGenericAlias`, slated for removal in 3.17) does not appear on 3.12,
+so the dependency stack is quieter there. `python:3.12-slim` exists on
+Docker Hub. A grep for 3.13+/3.14-only syntax (PEP 695 generics, `type`
+statements, `@override`, `TypeIs`) found none, so nothing in the codebase
+depends on the newer runtime.
+
+This adds two items to the landing order: rebuild `backend/venv` on
+`python3.12`, and record 3.12 in `backend/CLAUDE.md` so a future venv is
+not built on whatever `python3` happens to be first on `PATH`. Without
+that note, the skew silently returns the next time the venv is recreated.
+
+Node stays at **26**, matching the local v26.9.0.
 
 ## Files added
 
@@ -87,15 +108,23 @@ A gate added on top of a few hundred existing findings is a gate that is red the
 moment it lands, and a red gate teaches everyone to ignore it. The work
 therefore lands as an ordered sequence, each step verified before the next:
 
-1. **Pin the tool config.** Add `backend/pyproject.toml`; delete
+0. **Standardize on Python 3.12.** Rebuild `backend/venv` with
+   `python3.12`, reinstall `requirements-dev.txt` into it, and record 3.12
+   as the project's Python version in `backend/CLAUDE.md`. Everything after
+   this step is verified against that venv, so it comes first.
+1. **Pin the tool config.** Add `backend/pyproject.toml` (including
+   `requires-python = ">=3.12"` and ruff's `target-version = "py312"`, which
+   is what keeps `UP` rules from rewriting code into newer-than-target
+   syntax); delete
    `backend/pytest.ini` (its three settings move into
    `[tool.pytest.ini_options]` unchanged). Split `requirements.txt` into
    runtime and `requirements-dev.txt`.
-2. **Clear the backend lint debt.** Apply `ruff check --fix` (174
-   mechanical fixes), then resolve the 21 that remain. Both numbers were
-   measured by doing exactly this on a throwaway copy of `backend/`, after
-   which `pytest` still reported 139 passed. `--unsafe-fixes` is not used,
-   though ruff offers 5 more fixes behind it.
+2. **Clear the backend lint debt.** Apply `ruff check --fix` (200
+   mechanical fixes), then resolve the 22 that remain. Both numbers were
+   measured by doing exactly this on a throwaway copy of `backend/` with
+   `target-version = py312`, after which `pytest` on 3.12 still reported
+   139 passed. `--unsafe-fixes` is not used, though ruff offers 6 more
+   fixes behind it.
 3. **Clear the frontend lint debt.** The two `react-hooks/set-state-in-effect`
    errors (below).
 4. **Add the Dockerfile and `.dockerignore`.** Verified locally: image
@@ -131,7 +160,7 @@ selected:
   findings, none of which this round has the context to adjudicate. Can be
   adopted later as a deliberate decision rather than as a side effect.
 
-The 21 findings surviving autofix, which step 2 resolves by hand:
+The 22 findings surviving autofix, which step 2 resolves by hand:
 
 | Rule | Count | Nature of the fix |
 |---|---|---|
@@ -139,6 +168,7 @@ The 21 findings surviving autofix, which step 2 resolves by hand:
 | `RUF013` implicit-optional | 4 | `x: str = None` → `x: str | None = None` |
 | `SIM117` nested `with` | 3 | Combine context managers |
 | `SIM102` collapsible `if` | 1 | Merge conditions |
+| `SIM108` if-else instead of ternary | 1 | Rewrite as a conditional expression, only if it stays readable |
 | `B008` function-call-in-default-argument | 1 | Likely a FastAPI `Depends()`, which is the framework's idiom — expect a `# noqa` with a reason, not a "fix" |
 | `RUF012` mutable-class-default | 1 | Needs `ClassVar` annotation |
 | `F401` unused-import, `F841` unused-variable | 2 | Delete, after confirming neither is a re-export |
@@ -166,7 +196,7 @@ so no step repeats the `cd`.
 
 | Step | Command | Gates? |
 |---|---|---|
-| Setup | `actions/setup-python@v5`, `python-version: "3.14"`, `cache: pip` | — |
+| Setup | `actions/setup-python@v5`, `python-version: "3.12"`, `cache: pip` | — |
 | Install | `pip install -r requirements-dev.txt` | — |
 | Lint | `ruff check .` | **yes** |
 | Tests | `pytest -q` | **yes** |
@@ -212,7 +242,7 @@ with a home of its own.
 
 ## Dockerfile
 
-Two-stage build on `python:3.14-slim` (tag existence verified against
+Two-stage build on `python:3.12-slim` (tag existence verified against
 Docker Hub). Builder stage installs `requirements.txt` into a virtualenv;
 runtime stage copies that venv plus the application source and runs as a
 non-root `app` user.
