@@ -700,7 +700,7 @@ docker run --rm \
   -e GEMINI_API_KEY=ci-dummy \
   backend:ci python -m scripts.poll_gmail --once
 ```
-Expected: exits 0. With `GMAIL_ENABLED` unset it defaults to false, so the worker logs that the channel is disabled and does one no-op cycle. An `ImportError` or `ModuleNotFoundError` means `scripts/` was excluded from the image — check `.dockerignore`.
+Expected: **exit 1**, with `✗ GMAIL_ENABLED is false — nothing to do` on stderr. That exit code is deliberate application behavior (`scripts/poll_gmail.py:85-87` returns 1 when the channel is disabled), not a container fault — an earlier draft of this plan wrongly expected 0. What this step verifies is that the entrypoint *imports and runs* from the image, so assert on the log line and on the absence of `ImportError`/`ModuleNotFoundError`/`No module named` rather than on the exit code. An import error means `scripts/` was excluded from the image — check `.dockerignore`.
 
 - [ ] **Step 9: Tear down**
 

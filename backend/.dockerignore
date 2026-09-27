@@ -1,0 +1,15 @@
+venv/
+.venv/
+__pycache__/
+*.pyc
+logs/
+*.log
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+tests/
+# Present and untracked locally. .gitignore does not apply to a build
+# context, so without these lines they would be baked into an image layer.
+.env
+credentials.json
+client_secret*.json
