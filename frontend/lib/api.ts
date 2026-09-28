@@ -1,17 +1,4 @@
-function requireEnv(name: "NEXT_PUBLIC_BACKEND_URL" | "NEXT_PUBLIC_API_KEY"): string {
-  const value = process.env[name];
-  if (!value) {
-    throw new Error(
-      `Missing required environment variable ${name}. Set it in .env.local (or your ` +
-        `deployment platform's project settings) and rebuild — Next.js inlines ` +
-        `NEXT_PUBLIC_* vars at build time, so a runtime-only change won't take effect.`
-    );
-  }
-  return value;
-}
-
-const BACKEND_URL = requireEnv("NEXT_PUBLIC_BACKEND_URL");
-const API_KEY = requireEnv("NEXT_PUBLIC_API_KEY");
+const BACKEND_URL = "/api/backend";
 
 export interface SendMessageResponse {
   success: boolean;
@@ -22,11 +9,10 @@ export interface SendMessageResponse {
 }
 
 export async function sendMessage(message: string): Promise<SendMessageResponse> {
-  const res = await fetch(`${BACKEND_URL}/api/chat/send`, {
+  const res = await fetch(`${BACKEND_URL}/chat/send`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${API_KEY}`,
     },
     body: JSON.stringify({
       message,
@@ -72,11 +58,7 @@ export async function listConversations(
   channel?: string
 ): Promise<ConversationSummary[]> {
   const query = channel ? `?channel=${encodeURIComponent(channel)}` : "";
-  const res = await fetch(`${BACKEND_URL}/api/chat/conversations${query}`, {
-    headers: {
-      Authorization: `Bearer ${API_KEY}`,
-    },
-  });
+  const res = await fetch(`${BACKEND_URL}/chat/conversations${query}`);
 
   if (!res.ok) {
     throw new Error(`Request failed: ${res.status}`);
@@ -89,11 +71,7 @@ export async function listConversations(
 export async function getConversation(
   conversationId: string
 ): Promise<{ conversation: ConversationSummary; messages: Message[] }> {
-  const res = await fetch(`${BACKEND_URL}/api/chat/conversations/${conversationId}`, {
-    headers: {
-      Authorization: `Bearer ${API_KEY}`,
-    },
-  });
+  const res = await fetch(`${BACKEND_URL}/chat/conversations/${conversationId}`);
 
   if (!res.ok) {
     throw new Error(`Request failed: ${res.status}`);
@@ -107,11 +85,10 @@ export async function replyToConversation(
   message: string,
   agentName = "Support Agent"
 ): Promise<void> {
-  const res = await fetch(`${BACKEND_URL}/api/chat/conversations/${conversationId}/reply`, {
+  const res = await fetch(`${BACKEND_URL}/chat/conversations/${conversationId}/reply`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${API_KEY}`,
     },
     body: JSON.stringify({ message, agent_name: agentName }),
   });
@@ -138,11 +115,7 @@ export interface QAPair {
 }
 
 export async function listQAPairs(): Promise<QAPair[]> {
-  const res = await fetch(`${BACKEND_URL}/api/knowledge-base/qa-pairs`, {
-    headers: {
-      Authorization: `Bearer ${API_KEY}`,
-    },
-  });
+  const res = await fetch(`${BACKEND_URL}/knowledge-base/qa-pairs`);
 
   if (!res.ok) {
     throw new Error(`Request failed: ${res.status}`);
@@ -153,11 +126,10 @@ export async function listQAPairs(): Promise<QAPair[]> {
 }
 
 export async function createQAPair(question: string, answer: string): Promise<QAPair> {
-  const res = await fetch(`${BACKEND_URL}/api/knowledge-base/qa-pairs`, {
+  const res = await fetch(`${BACKEND_URL}/knowledge-base/qa-pairs`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${API_KEY}`,
     },
     body: JSON.stringify({ question, answer }),
   });
@@ -174,11 +146,10 @@ export async function updateQAPair(
   question: string,
   answer: string
 ): Promise<QAPair> {
-  const res = await fetch(`${BACKEND_URL}/api/knowledge-base/qa-pairs/${qaId}`, {
+  const res = await fetch(`${BACKEND_URL}/knowledge-base/qa-pairs/${qaId}`, {
     method: "PATCH",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${API_KEY}`,
     },
     body: JSON.stringify({ question, answer }),
   });
@@ -191,11 +162,8 @@ export async function updateQAPair(
 }
 
 export async function deleteQAPair(qaId: string): Promise<void> {
-  const res = await fetch(`${BACKEND_URL}/api/knowledge-base/qa-pairs/${qaId}`, {
+  const res = await fetch(`${BACKEND_URL}/knowledge-base/qa-pairs/${qaId}`, {
     method: "DELETE",
-    headers: {
-      Authorization: `Bearer ${API_KEY}`,
-    },
   });
 
   if (!res.ok) {
