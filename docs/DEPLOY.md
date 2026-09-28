@@ -23,12 +23,13 @@ it to your instance. Write the IP down — call it `VM_IP` below.
 
 ### 1.2 Open the firewall
 
-The VM must accept web traffic. In the console: **VPC network → Firewall →
-Create firewall rule**
+The VM must accept HTTPS. Easiest route: **Compute Engine → VM instances →
+your VM → Edit → Firewalls → check "Allow HTTPS traffic" → Save.**
 
-- Targets: *All instances in the network* (or a tag you also add to the VM)
-- Source IPv4 ranges: `0.0.0.0/0`
-- Protocols and ports: TCP `80,443`
+That opens 443 only, which is all this setup needs — the certificate is
+obtained over the TLS-ALPN-01 challenge, which runs on 443 too. Port 80 stays
+closed, so plain-HTTP requests are refused rather than redirected; the
+`Caddyfile` is configured to match.
 
 Do **not** open port 8000 — nothing should reach the API except through Caddy.
 
@@ -42,14 +43,22 @@ starts and then fails every database call.
 
 Have your Atlas connection string ready (`mongodb+srv://...`).
 
-### 1.4 A domain name (recommended)
+### 1.4 A hostname (required)
 
 Point a DNS `A` record — for example `api.yourdomain.com` — at `VM_IP`. Caddy
 uses it to get a free HTTPS certificate automatically.
 
-No domain yet? You can deploy over plain HTTP on the IP first and add the
-domain later; step 3.2 shows how. Plain HTTP is fine for a first smoke test
-but not for real traffic.
+A hostname is not optional here: **no public certificate authority will issue
+a certificate for a bare IP address**, so `https://VM_IP` cannot work. If you
+don't own a domain, a free dynamic-DNS hostname such as
+`yourname.duckdns.org` works exactly the same way — register it and point it
+at `VM_IP`.
+
+Verify it resolves before deploying, or the first certificate request fails:
+
+```bash
+dig +short api.yourdomain.com     # must print VM_IP
+```
 
 ### 1.5 The Gmail refresh token (only if you use the email channel)
 
@@ -70,16 +79,24 @@ these blocks one at a time.
 ```bash
 sudo apt-get update && sudo apt-get install -y ca-certificates curl git
 sudo install -m 0755 -d /etc/apt/keyrings
-sudo curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc
-echo "deb [signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian \
-  $(. /etc/os-release && echo $VERSION_CODENAME) stable" | sudo tee /etc/apt/sources.list.d/docker.list
+# $ID and $VERSION_CODENAME come from /etc/os-release, so this is correct on
+# both Debian and Ubuntu. The key path and the repo path must name the same
+# distro -- mixing them is what produces a 404 from apt.
+. /etc/os-release
+sudo curl -fsSL "https://download.docker.com/linux/$ID/gpg" -o /etc/apt/keyrings/docker.asc
+sudo chmod a+r /etc/apt/keyrings/docker.asc
+echo "deb [signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/$ID $VERSION_CODENAME stable" \
+  | sudo tee /etc/apt/sources.list.d/docker.list
 sudo apt-get update
 sudo apt-get install -y docker-ce docker-compose-plugin
 sudo usermod -aG docker $USER
 ```
 
-If your VM runs Ubuntu rather than Debian, replace both occurrences of
-`/debian` with `/ubuntu`.
+A `404 Not Found` on the docker repo means Docker publishes nothing for this
+release's codename yet. Check `https://download.docker.com/linux/$ID/dists/`,
+then either substitute the previous stable codename in
+`/etc/apt/sources.list.d/docker.list` or use the distro's own packages:
+`sudo apt-get install -y docker.io docker-compose-v2`.
 
 Now **log out and back in** so your user picks up Docker access. Verify:
 
@@ -167,18 +184,14 @@ This one sits next to `docker-compose.yml` and holds a single line.
 nano /opt/acs/app/.env
 ```
 
-**With a domain** (HTTPS, certificate issued automatically):
+Use the hostname from step 1.4 — no `https://` prefix, no trailing slash:
 
 ```
 APP_DOMAIN=api.yourdomain.com
 ```
 
-**Without a domain yet** (plain HTTP on the IP — the `http://` prefix is what
-turns TLS off; a bare IP cannot be certified):
-
-```
-APP_DOMAIN=http://34.12.34.56
-```
+An IP address here will not work: Caddy would fall back to a self-signed
+certificate that every browser rejects.
 
 ---
 

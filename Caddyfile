@@ -1,14 +1,29 @@
 # Reverse proxy in front of the backend. Caddy requests and renews a TLS
-# certificate automatically, as long as APP_DOMAIN is a real domain whose DNS
-# A record points at this VM and ports 80 + 443 are open.
+# certificate automatically, as long as APP_DOMAIN is a hostname whose DNS A
+# record points at this VM.
 #
 # APP_DOMAIN comes from the .env file next to docker-compose.yml:
-#   with a domain:    APP_DOMAIN=api.yourdomain.com     -> HTTPS, auto certificate
-#   no domain yet:    APP_DOMAIN=http://34.12.34.56     -> plain HTTP on the VM's IP
-#                     (the http:// prefix is what disables TLS; a bare IP cannot
-#                      be certified, so leaving it off breaks the site instead)
+#   APP_DOMAIN=api.yourdomain.com     -> HTTPS with an automatic certificate
+#
+# A bare IP address cannot be certified by any public CA, so a hostname is
+# required for real HTTPS -- a free one (DuckDNS et al.) is enough.
+{
+	# This VM's firewall allows 443 only, so there is no port 80 to redirect
+	# from. Without this, Caddy would still open a redirect listener on 80 that
+	# nothing can ever reach.
+	auto_https disable_redirects
+}
 
 {$APP_DOMAIN} {
+	# Port 80 being closed rules out the HTTP-01 challenge. Disabling it sends
+	# Caddy straight to TLS-ALPN-01, which runs over 443 and needs no extra
+	# firewall rule -- otherwise every renewal burns a failed attempt first.
+	tls {
+		issuer acme {
+			disable_http_challenge
+		}
+	}
+
 	# `api` is the compose service name; Docker's internal DNS resolves it.
 	reverse_proxy api:8000
 

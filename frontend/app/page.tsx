@@ -15,6 +15,14 @@ const CONVERSATION_ID_STORAGE_KEY = "chat.conversationId";
 
 const BULLET_RE = /^(\*|-|\d+\.)\s+/;
 
+function newLocalId(): string {
+  // crypto.randomUUID requires a secure context (HTTPS or localhost), which
+  // isn't available when the dev server is reached over a plain-HTTP LAN IP.
+  return typeof crypto !== "undefined" && crypto.randomUUID
+    ? crypto.randomUUID()
+    : `local-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
 function renderInline(text: string) {
   const parts = text.split(/(\*\*[^*]+\*\*)/g);
   return parts.map((part, i) =>
@@ -128,7 +136,7 @@ export default function ChatPage() {
     setInput("");
     setMessages((prev) => [
       ...prev,
-      { id: crypto.randomUUID(), sender: "customer", content: text },
+      { id: newLocalId(), sender: "customer", content: text },
     ]);
     setSending(true);
 
@@ -148,7 +156,7 @@ export default function ChatPage() {
       setMessages((prev) => [
         ...prev,
         {
-          id: crypto.randomUUID(),
+          id: newLocalId(),
           sender: "error",
           content: "Something went wrong sending your message. Please try again.",
         },
