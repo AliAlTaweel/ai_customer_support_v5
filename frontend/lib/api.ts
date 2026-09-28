@@ -1,5 +1,17 @@
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL!;
-const API_KEY = process.env.NEXT_PUBLIC_API_KEY!;
+function requireEnv(name: "NEXT_PUBLIC_BACKEND_URL" | "NEXT_PUBLIC_API_KEY"): string {
+  const value = process.env[name];
+  if (!value) {
+    throw new Error(
+      `Missing required environment variable ${name}. Set it in .env.local (or your ` +
+        `deployment platform's project settings) and rebuild — Next.js inlines ` +
+        `NEXT_PUBLIC_* vars at build time, so a runtime-only change won't take effect.`
+    );
+  }
+  return value;
+}
+
+const BACKEND_URL = requireEnv("NEXT_PUBLIC_BACKEND_URL");
+const API_KEY = requireEnv("NEXT_PUBLIC_API_KEY");
 
 export interface SendMessageResponse {
   success: boolean;

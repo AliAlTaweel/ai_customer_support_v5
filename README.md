@@ -122,11 +122,15 @@ configured.
 ### Frontend
 
 1. `cd frontend && npm install`
-2. Create `frontend/.env.local` (no `.env.example` is committed):
+2. Create `frontend/.env.local` (see `frontend/.env.example`):
    ```
    NEXT_PUBLIC_BACKEND_URL=http://localhost:8000
    NEXT_PUBLIC_API_KEY=<api key printed by scripts.seed_tenant>
    ```
+   These are required at build time (Next.js inlines `NEXT_PUBLIC_*` vars into
+   the bundle), so on Vercel or any other host, set them as project
+   environment variables before building — a runtime-only change won't apply
+   until the next build.
 3. `npm run dev` — serves the UI at `http://localhost:3000`
 
 The backend must already be running for the frontend to load conversations
