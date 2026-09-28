@@ -10,3 +10,5 @@ logs/
 secrets/
 credentials.json
 client_secret*.json
+# Personal deployment notes: holds real hostnames, IPs, and project ids.
+DEPLOY_VM.md

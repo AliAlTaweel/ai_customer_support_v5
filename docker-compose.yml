@@ -49,7 +49,10 @@ services:
     image: caddy:2
     restart: always
     ports:
-      - "80:80"
+      # 443 only: the VM firewall allows HTTPS alone, and the Caddyfile gets its
+      # certificate over the TLS-ALPN-01 challenge, which also runs on 443. Open
+      # port 80 in the firewall and add "80:80" here if you ever want plain-HTTP
+      # requests redirected instead of refused.
       - "443:443"
     environment:
       # Read by ./Caddyfile as {$APP_DOMAIN}. Set it in the .env file that sits
